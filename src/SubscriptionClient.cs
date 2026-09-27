@@ -275,12 +275,13 @@ namespace TheCloser
             catch (ClaudeApiException ex)
             {
                 if (ex.Status != 401) throw;
-                await RefreshCoreAsync(true, ct).ConfigureAwait(false);
-                ct.ThrowIfCancellationRequested();
-                if (!IsActive) throw new SubscriptionException(Status, Error ?? "Refresh your subscription in Settings.");
-                if (!Models.Contains(model)) throw new SubscriptionException("model_not_in_plan", "This model isn't included in your current plan.");
-                return await OpenRouterClient.StreamManagedAsync(S.SubscriptionPass, DeviceId, body, onText, ct, Http).ConfigureAwait(false);
             }
+            // The Windows .NET Framework compiler uses C# 5, which cannot await inside catch.
+            await RefreshCoreAsync(true, ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            if (!IsActive) throw new SubscriptionException(Status, Error ?? "Refresh your subscription in Settings.");
+            if (!Models.Contains(model)) throw new SubscriptionException("model_not_in_plan", "This model isn't included in your current plan.");
+            return await OpenRouterClient.StreamManagedAsync(S.SubscriptionPass, DeviceId, body, onText, ct, Http).ConfigureAwait(false);
         }
 
         internal static string SafeStripeUrl(string value)
