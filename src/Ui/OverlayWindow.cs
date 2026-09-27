@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -28,6 +29,7 @@ namespace TheCloser.Ui
 
         public readonly AppSettings S;
         public readonly SessionController Ctl;
+        public readonly SubscriptionClient Billing;
         private readonly bool _forceCapturable;
         internal static bool StealthOn;
 
@@ -74,6 +76,10 @@ namespace TheCloser.Ui
         private IntPtr _hwnd;
         private readonly DispatcherTimer _tick = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         private readonly DispatcherTimer _saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        private readonly DispatcherTimer _billingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        private DateTime _billingChecked;
+        private DateTime _checkoutWatchUntil = DateTime.UtcNow.AddMinutes(10);
+        private bool _billingRefreshing, _closed;
         private bool _modalOpen;
         private readonly HashSet<int> _registered = new HashSet<int>();
 
@@ -82,7 +88,8 @@ namespace TheCloser.Ui
             S = settings;
             _forceCapturable = forceCapturable;
             StealthOn = S.HideFromCapture && !forceCapturable;
-            Ctl = new SessionController(S, Dispatcher);
+            Billing = new SubscriptionClient(S);
+            Ctl = new SessionController(S, Dispatcher, Billing);
 
             Title = "TheCloser";
             WindowStyle = WindowStyle.None;
@@ -114,7 +121,30 @@ namespace TheCloser.Ui
             Ctl.QasChanged += OnQasChanged;
             Ctl.TranscriptChanged += () => _session.RefreshTranscript();
             Ctl.Status += OnSessionStatus;
-            Ctl.NeedsKey += () => ShowSettings("models");
+            Ctl.NeedsKey += () => ShowSettings(S.UseSubscription ? "subscription" : "models");
+            Billing.StateChanged += delegate
+            {
+                if (_closed || Dispatcher.HasShutdownStarted) return;
+                Dispatcher.BeginInvoke((Action)delegate
+                {
+                    if (_closed) return;
+                    if (S.UseSubscription && Billing.IsActive && !Billing.Models.Contains(S.Model))
+                    {
+                        S.Model = Billing.Models[0];
+                        SaveSettingsSoon();
+                    }
+                    _settings.RefreshSubscription();
+                    OnKeysChanged();
+                });
+            };
+            _billingTimer.Tick += async delegate
+            {
+                if (!S.UseSubscription && !Billing.PendingCheckout) return;
+                var interval = Billing.PendingCheckout && DateTime.UtcNow < _checkoutWatchUntil ? TimeSpan.FromSeconds(15) : TimeSpan.FromMinutes(45);
+                if (DateTime.UtcNow - _billingChecked >= interval) await RefreshBillingAsync();
+            };
+            _billingTimer.Start();
+            Loaded += async delegate { if (S.UseSubscription || Billing.PendingCheckout) await RefreshBillingAsync(); };
 
             _tick.Tick += delegate { if (_view == "session") _session.Tick(); UpdateHover(); };
             _tick.Start();
@@ -414,6 +444,25 @@ namespace TheCloser.Ui
             _setup.Refresh();
         }
 
+        public async Task RefreshBillingAsync()
+        {
+            if (_billingRefreshing || _closed) return;
+            _billingRefreshing = true;
+            try
+            {
+                await Billing.RefreshAsync();
+                if (Billing.IsActive) await Billing.RefreshUsageAsync();
+            }
+            catch (Exception ex) { if (!_closed) Toast("Couldn't refresh your subscription: " + ex.Message, true); }
+            finally { _billingChecked = DateTime.UtcNow; _billingRefreshing = false; }
+        }
+
+        public void WatchCheckout()
+        {
+            _checkoutWatchUntil = DateTime.UtcNow.AddMinutes(10);
+            _billingChecked = DateTime.MinValue;
+        }
+
         private void RefreshTopBar()
         {
             switch (_view)
@@ -663,7 +712,7 @@ namespace TheCloser.Ui
         /// <summary>Adds the enabled models to a menu, the current one ticked, then "Manage models…".</summary>
         private void AddModelItems(ItemsControl parent, Action picked)
         {
-            foreach (var slug in S.EnabledModels)
+            foreach (var slug in S.UseSubscription ? Billing.Models : S.EnabledModels)
             {
                 var m = slug;
                 var mi = new MenuItem
@@ -671,13 +720,13 @@ namespace TheCloser.Ui
                     Header = ModelCatalog.Name(m),
                     IsCheckable = true,
                     IsChecked = m == S.Model,
-                    InputGestureText = ModelCatalog.Resolve(S, m).Provider == null ? "needs a key" : ""
+                    InputGestureText = ModelCatalog.Resolve(S, m).Provider == null ? (S.UseSubscription ? "check subscription" : "needs a key") : ""
                 };
                 mi.Click += delegate { SetModel(m); if (picked != null) picked(); };
                 parent.Items.Add(mi);
             }
             parent.Items.Add(new Separator());
-            parent.Items.Add(Item("Manage models…", delegate { ShowSettings("models"); }));
+            parent.Items.Add(Item(S.UseSubscription ? "Subscription and models…" : "Manage models…", delegate { ShowSettings(S.UseSubscription ? "subscription" : "models"); }));
         }
 
         public void SetModel(string slug)
@@ -786,9 +835,10 @@ namespace TheCloser.Ui
         // Sessions (called by the views)
         // =========================================================================================
 
-        public void StartInterview(Session previous)
+        public async void StartInterview(Session previous)
         {
-            if (ModelCatalog.Resolve(S, S.Model).Provider == null) { ShowSettings("models"); return; }
+            if (S.UseSubscription && !Billing.IsActive) await RefreshBillingAsync();
+            if (ModelCatalog.Resolve(S, S.Model).Provider == null) { ShowSettings(S.UseSubscription ? "subscription" : "models"); return; }
             var session = previous ?? new Session { PromptId = S.PromptId };
             _reviewing = false;
             Ctl.Begin(session);
@@ -1045,6 +1095,7 @@ namespace TheCloser.Ui
         public void ShowWelcomeTour()
         {
             var body = new StackPanel();
+            body.Children.Add(Bullet2("Choose your AI plan", "Open Settings > Subscription for Pro, or add your own provider keys in Models."));
             body.Children.Add(Bullet2("Set up your call", "Attach a reference file and notes, pick a prompt, then press Start."));
             body.Children.Add(Bullet2("Answers as you talk", "When the other person asks something, an answer streams into the card a second later."));
             body.Children.Add(Bullet2("Analyze the screen", "Press Ctrl+Shift+Enter to send a screenshot — a coding problem, a quiz, a slide."));
@@ -1461,6 +1512,8 @@ namespace TheCloser.Ui
 
         private void OnClosing()
         {
+            _closed = true;
+            _billingTimer.Stop();
             try { if (_calls != null) _calls.Dispose(); } catch { }
             try { Ctl.End(); } catch { }
             SaveBounds();

@@ -36,6 +36,7 @@ namespace TheCloser
         /// <summary>Which provider and model the check uses, or null when there's no key for either.</summary>
         public static ModelRoute Route(AppSettings s)
         {
+            if (s.UseSubscription) return new ModelRoute { Provider = "subscription", ApiModel = OpenRouterModel };
             if (s.EffectiveAnthropicKey.Length > 0)
                 return new ModelRoute { Provider = "anthropic", ApiModel = AnthropicModel, Key = s.EffectiveAnthropicKey };
             if (s.EffectiveOpenRouterKey.Length > 0)
@@ -45,7 +46,7 @@ namespace TheCloser
 
         /// <param name="recent">The last few lines in [Speaker] text form, newest last.</param>
         /// <param name="mineCount">True when the other side hasn't spoken yet, so the user's own questions count.</param>
-        public static async Task<GateVerdict> CheckAsync(AppSettings s, string recent, bool mineCount, CancellationToken ct)
+        public static async Task<GateVerdict> CheckAsync(AppSettings s, string recent, bool mineCount, CancellationToken ct, SubscriptionClient billing = null)
         {
             var route = Route(s);
             if (route == null) throw new InvalidOperationException("No API key for the question check.");
@@ -81,7 +82,12 @@ namespace TheCloser
                             Json.Obj("role", "system", "content", Instructions),
                             Json.Obj("role", "user", "content", user)
                         });
-                    r = await OpenRouterClient.StreamAsync(route.Key, body, delegate { }, timeout.Token).ConfigureAwait(false);
+                    if (route.Provider == "subscription")
+                    {
+                        if (billing == null) throw new SubscriptionException("subscription_unavailable", "Refresh your subscription in Settings.");
+                        r = await billing.StreamAsync(body, delegate { }, timeout.Token).ConfigureAwait(false);
+                    }
+                    else r = await OpenRouterClient.StreamAsync(route.Key, body, delegate { }, timeout.Token).ConfigureAwait(false);
                 }
                 return Parse(r.Text);
             }

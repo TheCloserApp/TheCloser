@@ -11,7 +11,7 @@ using System.Windows.Media;
 namespace TheCloser.Ui
 {
     /// <summary>Settings: icon rail (General, Models, Prompts, Shortcuts) and the page content.</summary>
-    internal sealed class SettingsView : Grid
+    internal sealed partial class SettingsView : Grid
     {
         private readonly OverlayWindow W;
         private AppSettings S { get { return W.S; } }
@@ -40,6 +40,7 @@ namespace TheCloser.Ui
             _railPanel.Children.Add(paneBtn);
             AddRail("general", U.Icon(U.GGear, 17, null), "General");
             AddRail("models", U.Sparkle(17, null), "Models");
+            AddRail("subscription", U.Icon(U.GPerson, 17, null), "Subscription");
             AddRail("prompts", U.Icon(U.GChat, 17, null), "Prompts");
             AddRail("shortcuts", U.Icon(U.GKeyboard, 17, null), "Shortcuts");
             Children.Add(new Border { Background = U.B(0xFF121214), CornerRadius = new CornerRadius(18, 0, 0, 18), Child = _railPanel });
@@ -85,6 +86,7 @@ namespace TheCloser.Ui
             switch (key)
             {
                 case "models": content = ModelsPage(); break;
+                case "subscription": content = SubscriptionPage(); break;
                 case "prompts": content = PromptsPage(); break;
                 case "shortcuts": content = ShortcutsPage(); break;
                 default: content = GeneralPage(); break;
@@ -205,8 +207,15 @@ namespace TheCloser.Ui
             pick.HorizontalAlignment = HorizontalAlignment.Left;
             p.Children.Add(pick);
 
+            var billing = U.Btn("Btn.Pill", S.UseSubscription ? "View subscription and usage" : "Get Pro — AI answers without your own key", () => Show("subscription"));
+            billing.HorizontalAlignment = HorizontalAlignment.Left;
+            billing.Margin = new Thickness(0, 14, 0, 0);
+            p.Children.Add(billing);
+
             p.Children.Add(H("API keys"));
-            p.Children.Add(Sub("Use your own keys. They're encrypted for your Windows account and only sent to each provider."));
+            p.Children.Add(Sub(S.UseSubscription
+                ? "Your subscription handles AI answers. Optional speech keys are billed separately by their providers. Switch off subscription answers to use your own AI keys."
+                : "Use your own keys. They're encrypted for your Windows account and only sent to each provider."));
             var keys = new StackPanel();
             keys.Children.Add(KeyRow("Anthropic", "Claude models, direct (fastest, prompt caching)", "sk-ant-...", S.AnthropicKey, "https://console.anthropic.com/settings/keys",
                 v => S.AnthropicKey = v, TestAnthropic));

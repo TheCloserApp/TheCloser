@@ -3,7 +3,13 @@
 #   .\test.ps1 -Audio     also plays a short quiet phrase to check speaker + microphone capture
 #   .\test.ps1 -Api       also sends one real question to Claude using the key saved in Settings
 #   .\test.ps1 -Demo      opens the window filled with sample content (no API calls)
-param([switch]$Audio, [switch]$Api, [switch]$Demo)
+#   .\test.ps1 -CI        skips the Windows 11 Live Captions installation check on CI
+param([switch]$Audio, [switch]$Api, [switch]$Demo, [switch]$CI)
+
+$ErrorActionPreference = 'Stop'
+if ($CI -and ($Audio -or $Api -or $Demo)) {
+    throw '-CI runs offline checks only; do not combine it with -Audio, -Api or -Demo.'
+}
 
 $exe = Join-Path $PSScriptRoot 'dist\TheCloser.exe'
 if (-not (Test-Path $exe)) { & (Join-Path $PSScriptRoot 'build.ps1') }
@@ -19,7 +25,9 @@ Remove-Item $log -ErrorAction SilentlyContinue
 $testArgs = @('--selftest', "`"$log`"")
 if ($Audio) { $testArgs += '--audio' }
 if ($Api) { $testArgs += '--api' }
+if ($CI) { $testArgs += '--ci' }
 $p = Start-Process -FilePath $exe -ArgumentList $testArgs -PassThru -Wait
+if (-not (Test-Path $log)) { throw "Self-test exited with code $($p.ExitCode) without writing $log" }
 
 foreach ($line in Get-Content $log) {
     if ($line -like 'FAIL*' -or $line -like '*FAILED') { Write-Host $line -ForegroundColor Red }

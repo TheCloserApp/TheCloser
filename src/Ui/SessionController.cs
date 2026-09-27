@@ -16,6 +16,7 @@ namespace TheCloser.Ui
     {
         private readonly AppSettings S;
         private readonly Dispatcher D;
+        private readonly SubscriptionClient Billing;
         private ITranscriptSource _src;
         private readonly DispatcherTimer _auto;
         private bool _pendingQuestion;
@@ -40,10 +41,11 @@ namespace TheCloser.Ui
         public event Action<string, bool> Status;
         public event Action NeedsKey;
 
-        public SessionController(AppSettings settings, Dispatcher dispatcher)
+        public SessionController(AppSettings settings, Dispatcher dispatcher, SubscriptionClient billing = null)
         {
             S = settings;
             D = dispatcher;
+            Billing = billing;
             _auto = new DispatcherTimer(DispatcherPriority.Normal, dispatcher);
             _auto.Tick += delegate { AutoTick(); };
         }
@@ -287,7 +289,7 @@ namespace TheCloser.Ui
             Task.Run(async () =>
             {
                 GateVerdict v;
-                try { v = await QuestionGate.CheckAsync(settings, recent, mineCount, cts.Token).ConfigureAwait(false); }
+                try { v = await QuestionGate.CheckAsync(settings, recent, mineCount, cts.Token, Billing).ConfigureAwait(false); }
                 catch (Exception)
                 {
                     if (cts.IsCancellationRequested) return;
@@ -415,7 +417,7 @@ namespace TheCloser.Ui
         public void Answer(AnswerKind kind, string userText, string screenshot)
         {
             if (Current == null) return;
-            if (ModelCatalog.Resolve(S, S.Model).Provider == null)
+            if (!S.UseSubscription && ModelCatalog.Resolve(S, S.Model).Provider == null)
             {
                 Say(ModelCatalog.Resolve(S, S.Model).Missing.Replace(" Click to open API keys.", ""), true);
                 Raise(NeedsKey);
@@ -471,7 +473,7 @@ namespace TheCloser.Ui
                         if (live == null) return;
                         lock (live) live.Append(t);
                         qa.Dirty = true;
-                    }, cts.Token).ConfigureAwait(false);
+                    }, cts.Token, Billing).ConfigureAwait(false);
                     D.BeginInvoke((Action)(() => Finish(qa, result, cts)));
                 }
                 catch (OperationCanceledException) { }

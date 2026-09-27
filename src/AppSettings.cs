@@ -25,6 +25,20 @@ namespace TheCloser
         public string XaiKeyEnc { get; set; }
         public string WhisperKeyEnc { get; set; }
 
+        // --- Subscription (no Stripe or managed-provider secrets are stored here) ---
+        public bool UseSubscription { get; set; }
+        public string SubscriptionDeviceEnc { get; set; }
+        public string SubscriptionPassEnc { get; set; }
+        public long SubscriptionExpiresAt { get; set; }
+        public string SubscriptionPlan { get; set; }
+        public List<string> SubscriptionModels { get; set; }
+        public double SubscriptionAllowanceUSD { get; set; }
+        public string CheckoutRequestId { get; set; }
+        public string CheckoutPlan { get; set; }
+        public string CheckoutSessionId { get; set; }
+
+        [ScriptIgnore] public string SubscriptionPass { get { return Secret.Unprotect(SubscriptionPassEnc); } set { SubscriptionPassEnc = Secret.Protect(value); } }
+
         // --- Models ---
         public string Model { get; set; }                 // OpenRouter-style slug, e.g. "anthropic/claude-opus-5"
         public List<string> EnabledModels { get; set; }   // shown in the Model menu
@@ -69,6 +83,7 @@ namespace TheCloser
 
         public AppSettings()
         {
+            SubscriptionModels = new List<string>();
             Model = "anthropic/claude-opus-5";
             EnabledModels = new List<string>(ModelCatalog.DefaultEnabled);
             Effort = "low";
@@ -178,6 +193,7 @@ namespace TheCloser
 
         private void Normalize()
         {
+            if (SubscriptionModels == null) SubscriptionModels = new List<string>();
             if (EnabledModels == null || EnabledModels.Count == 0) EnabledModels = new List<string>(ModelCatalog.DefaultEnabled);
             EnabledModels = EnabledModels.Select(ModelCatalog.NormalizeSlug).Where(m => m.Length > 0).Distinct().ToList();
             if (CustomPrompts == null) CustomPrompts = new List<PromptDef>();
@@ -220,17 +236,25 @@ namespace TheCloser
             return d;
         }
 
-        public void Save()
+        private static readonly object SaveLock = new object();
+
+        public void Save() { TrySave(); }
+
+        internal bool TrySave()
         {
-            try
+            lock (SaveLock)
             {
-                Directory.CreateDirectory(Folder);
-                var tmp = FilePath + ".tmp";
-                File.WriteAllText(tmp, Json.Serialize(this), Encoding.UTF8);
-                if (File.Exists(FilePath)) File.Delete(FilePath);
-                File.Move(tmp, FilePath);
+                try
+                {
+                    Directory.CreateDirectory(Folder);
+                    var tmp = FilePath + ".tmp";
+                    File.WriteAllText(tmp, Json.Serialize(this), Encoding.UTF8);
+                    if (File.Exists(FilePath)) File.Replace(tmp, FilePath, null);
+                    else File.Move(tmp, FilePath);
+                    return true;
+                }
+                catch { return false; }
             }
-            catch { }
         }
 
         public AppSettings Clone()

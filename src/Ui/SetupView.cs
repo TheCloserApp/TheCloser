@@ -111,7 +111,7 @@ namespace TheCloser.Ui
                 Cursor = Cursors.Hand,
                 Child = bannerRow
             };
-            _banner.MouseLeftButtonUp += delegate { W.ShowSettings("models"); };
+            _banner.MouseLeftButtonUp += delegate { W.ShowSettings(S.UseSubscription ? "subscription" : "models"); };
             stack.Children.Add(_banner);
 
             _start = U.Btn("Btn.White", U.IconText(U.GPlay, "Start call", 10), () => W.StartInterview(_previous));
