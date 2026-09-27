@@ -1,0 +1,243 @@
+using System;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
+
+namespace TheCloser.Ui
+{
+    /// <summary>Renders the Markdown subset Claude uses in answers (headings, bullets, numbers, bold, italic, code) as WPF.</summary>
+    internal static class MarkdownView
+    {
+        private static readonly Regex Bullet = new Regex(@"^(\s*)([-*+•])\s+(.*)$");
+        private static readonly Regex Numbered = new Regex(@"^(\s*)(\d{1,3})[.)]\s+(.*)$");
+        private static readonly Regex Heading = new Regex(@"^(#{1,6})\s+(.*)$");
+
+        public static StackPanel Render(string markdown, double size)
+        {
+            var root = new StackPanel();
+            var lines = (markdown ?? "").Replace("\r\n", "\n").Split('\n');
+            StringBuilder code = null;
+            bool lastBlank = true;
+
+            foreach (var raw in lines)
+            {
+                var line = raw.TrimEnd();
+                if (line.TrimStart().StartsWith("```"))
+                {
+                    if (code == null) code = new StringBuilder();
+                    else
+                    {
+                        root.Children.Add(CodeBlock(code.ToString().TrimEnd('\n'), size));
+                        code = null;
+                    }
+                    continue;
+                }
+                if (code != null) { code.Append(raw).Append('\n'); continue; }
+
+                if (line.Trim().Length == 0)
+                {
+                    lastBlank = true;
+                    continue;
+                }
+                double top = lastBlank && root.Children.Count > 0 ? size * 0.55 : size * 0.2;
+                lastBlank = false;
+                var trimmed = line.Trim();
+
+                if (Regex.IsMatch(trimmed, @"^(-{3,}|\*{3,}|_{3,})$"))
+                {
+                    root.Children.Add(new Border { Height = 1, Background = U.Line, Margin = new Thickness(0, size * 0.6, 0, size * 0.4) });
+                    continue;
+                }
+
+                var m = Heading.Match(trimmed);
+                if (m.Success)
+                {
+                    var tb = Para(m.Groups[2].Value, size * (m.Groups[1].Value.Length <= 2 ? 1.12 : 1.04), top + size * 0.15);
+                    tb.FontWeight = FontWeights.Bold;
+                    root.Children.Add(tb);
+                    continue;
+                }
+
+                m = Bullet.Match(line);
+                if (m.Success)
+                {
+                    root.Children.Add(ListItem("•", m.Groups[3].Value, Depth(m.Groups[1].Value), size, top));
+                    continue;
+                }
+                m = Numbered.Match(line);
+                if (m.Success)
+                {
+                    root.Children.Add(ListItem(m.Groups[2].Value + ".", m.Groups[3].Value, Depth(m.Groups[1].Value), size, top));
+                    continue;
+                }
+
+                if (trimmed.StartsWith(">"))
+                {
+                    var q = Para(trimmed.TrimStart('>', ' '), size, 0);
+                    q.Foreground = U.Text2;
+                    root.Children.Add(new Border
+                    {
+                        BorderBrush = U.Border,
+                        BorderThickness = new Thickness(3, 0, 0, 0),
+                        Padding = new Thickness(12, 0, 0, 0),
+                        Margin = new Thickness(0, top, 0, 0),
+                        Child = q
+                    });
+                    continue;
+                }
+
+                root.Children.Add(Para(line, size, top));
+            }
+            if (code != null) root.Children.Add(CodeBlock(code.ToString().TrimEnd('\n'), size));
+            return root;
+        }
+
+        private static int Depth(string indent)
+        {
+            return Math.Min(3, indent.Replace("\t", "  ").Length / 2);
+        }
+
+        private static TextBlock Para(string text, double size, double top)
+        {
+            var tb = new TextBlock
+            {
+                FontFamily = U.Font,
+                FontSize = size,
+                Foreground = U.Text,
+                TextWrapping = TextWrapping.Wrap,
+                LineHeight = size * 1.38,
+                Margin = new Thickness(0, top, 0, 0)
+            };
+            AddInlines(tb.Inlines, text, size);
+            return tb;
+        }
+
+        private static Grid ListItem(string marker, string text, int depth, double size, double top)
+        {
+            var g = new Grid { Margin = new Thickness(depth * size * 1.2, top, 0, 0) };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(size * (marker.Length > 1 ? 1.5 : 1.05)) });
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            var dot = new TextBlock { Text = marker, FontFamily = U.Font, FontSize = size, Foreground = marker.Length > 1 ? U.Text2 : U.Text, LineHeight = size * 1.38 };
+            var body = Para(text, size, 0);
+            Grid.SetColumn(body, 1);
+            g.Children.Add(dot);
+            g.Children.Add(body);
+            return g;
+        }
+
+        private static Border CodeBlock(string code, double size)
+        {
+            var tb = new TextBlock
+            {
+                Text = code,
+                FontFamily = U.Mono,
+                FontSize = Math.Max(11, size * 0.78),
+                Foreground = U.B(0xFFD6DEEB),
+                LineHeight = Math.Max(11, size * 0.78) * 1.45
+            };
+            return new Border
+            {
+                Background = U.CodeBg,
+                BorderBrush = U.Border,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(14, 10, 14, 12),
+                Margin = new Thickness(0, size * 0.5, 0, size * 0.2),
+                Child = new ScrollViewer
+                {
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = tb
+                }
+            };
+        }
+
+        /// <summary>Inline spans: **bold**, __bold__, *italic*, `code`.</summary>
+        private static void AddInlines(InlineCollection inlines, string text, double size)
+        {
+            bool bold = false, italic = false;
+            var buf = new StringBuilder();
+            Action flush = delegate
+            {
+                if (buf.Length == 0) return;
+                var run = new Run(buf.ToString());
+                if (bold) run.FontWeight = FontWeights.Bold;
+                if (italic) run.FontStyle = FontStyles.Italic;
+                inlines.Add(run);
+                buf.Length = 0;
+            };
+            int i = 0;
+            while (i < text.Length)
+            {
+                char c = text[i];
+                if (c == '`')
+                {
+                    int end = text.IndexOf('`', i + 1);
+                    if (end > i)
+                    {
+                        flush();
+                        inlines.Add(new Run(text.Substring(i + 1, end - i - 1))
+                        {
+                            FontFamily = U.Mono,
+                            FontSize = size * 0.88,
+                            Foreground = U.B(0xFFB8E0FF),
+                            Background = U.B(0xFF26262B)
+                        });
+                        i = end + 1;
+                        continue;
+                    }
+                }
+                if ((c == '*' || c == '_') && i + 1 < text.Length && text[i + 1] == c)
+                {
+                    flush();
+                    bold = !bold;
+                    i += 2;
+                    continue;
+                }
+                if (c == '*' && (italic || (i + 1 < text.Length && !char.IsWhiteSpace(text[i + 1]))))
+                {
+                    flush();
+                    italic = !italic;
+                    i++;
+                    continue;
+                }
+                buf.Append(c);
+                i++;
+            }
+            flush();
+        }
+
+        /// <summary>Plain text of a rendered tree (self-test).</summary>
+        internal static string PlainText(DependencyObject root)
+        {
+            var sb = new StringBuilder();
+            Walk(root, sb);
+            return sb.ToString();
+        }
+
+        private static void Walk(DependencyObject o, StringBuilder sb)
+        {
+            var tb = o as TextBlock;
+            if (tb != null)
+            {
+                foreach (var inline in tb.Inlines)
+                {
+                    var r = inline as Run;
+                    if (r != null) sb.Append(r.Text);
+                }
+                if (tb.Inlines.Count == 0) sb.Append(tb.Text);
+                sb.Append('|');
+                return;
+            }
+            var panel = o as Panel;
+            if (panel != null) { foreach (UIElement c in panel.Children) Walk(c, sb); return; }
+            var border = o as Border;
+            if (border != null && border.Child != null) { Walk(border.Child, sb); return; }
+            var sv = o as ScrollViewer;
+            if (sv != null && sv.Content is DependencyObject) Walk((DependencyObject)sv.Content, sb);
+        }
+    }
+}
