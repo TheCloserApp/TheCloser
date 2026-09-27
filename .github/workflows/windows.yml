@@ -29,12 +29,18 @@ jobs:
       - name: Run offline self-tests
         run: .\test.ps1 -CI
 
+      - name: Collect self-test log
+        if: always()
+        run: |
+          $testLog = Join-Path $env:TEMP 'thecloser-selftest.txt'
+          if (Test-Path $testLog) { Copy-Item $testLog '.\dist\thecloser-selftest.txt' }
+
       - name: Upload self-test log
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: windows-selftest-log
-          path: ${{ runner.temp }}/thecloser-selftest.txt
+          path: dist/thecloser-selftest.txt
           if-no-files-found: warn
           retention-days: 14
 

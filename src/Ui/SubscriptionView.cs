@@ -22,7 +22,7 @@ namespace TheCloser.Ui
         {
             var p = Page();
             p.Children.Add(H("Subscription", true));
-            p.Children.Add(Sub("Pro and Pro Max use the same Stripe product catalog as TheCloser for Mac. Your subscription is linked to this Windows account on this PC."));
+            p.Children.Add(Sub("AI answers without managing provider keys. Pay securely with Stripe. Your subscription is linked to this Windows account on this PC."));
             var mode = SwitchRow("Use subscription for AI answers", "Switch off to use your own AI keys. This does not cancel your subscription.", S.UseSubscription, async on =>
             {
                 S.UseSubscription = on;
@@ -105,7 +105,7 @@ namespace TheCloser.Ui
                 p.Children.Add(box);
             }
             p.Children.Add(Sub("Subscriptions include AI answers. Use free Windows Live Captions for transcription, or add a separate xAI/OpenAI speech key in Models. Subscription prices and AI usage allowances are different amounts."));
-            p.Children.Add(Sub("A subscription is linked to one device; using the same product catalog does not transfer a Mac subscription to Windows. Keep your Windows app settings to retain access."));
+            p.Children.Add(Sub("A subscription is linked to one device. A Mac subscription does not transfer to Windows. Keep your Windows app settings to retain access."));
             return p;
         }
 
