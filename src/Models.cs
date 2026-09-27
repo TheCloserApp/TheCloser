@@ -114,6 +114,18 @@ namespace TheCloser
         public static ModelRoute Resolve(AppSettings s, string slug)
         {
             var r = new ModelRoute();
+            if (s.UseSubscription)
+            {
+                if (SubscriptionClient.HasActivePass(s) && s.SubscriptionModels.Contains(slug))
+                {
+                    r.Provider = "subscription";
+                    r.ApiModel = slug;
+                }
+                else r.Missing = SubscriptionClient.HasActivePass(s)
+                    ? "Choose a model included in your subscription."
+                    : "Open Settings > Subscription to activate or refresh your plan.";
+                return r;
+            }
             if (IsAnthropic(slug) && s.EffectiveAnthropicKey.Length > 0)
             {
                 r.Provider = "anthropic";
@@ -167,8 +179,13 @@ namespace TheCloser
     {
         private static readonly ClaudeClient Claude = new ClaudeClient();
 
-        public static Task<StreamResult> StreamAsync(AppSettings s, AnswerRequest req, Action<string> onText, CancellationToken ct)
+        public static Task<StreamResult> StreamAsync(AppSettings s, AnswerRequest req, Action<string> onText, CancellationToken ct, SubscriptionClient billing = null)
         {
+            if (s.UseSubscription)
+            {
+                if (billing == null) throw new SubscriptionException("subscription_unavailable", "Open Settings > Subscription to refresh your plan.");
+                return billing.StreamAsync(PromptBuilder.ForOpenRouter(req, s.Model), onText, ct);
+            }
             var route = ModelCatalog.Resolve(s, s.Model);
             if (route.Provider == null) throw new ClaudeApiException(401, "missing_key", route.Missing.Replace(" Click to open API keys.", ""));
             if (route.Provider == "anthropic")

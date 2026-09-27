@@ -4,8 +4,10 @@ TheCloser is a Windows desktop app in the spirit of HuddleMate. It listens to yo
 
 ## Features
 
+- **Subscription or your own keys**: subscribe through Stripe in **Settings > Subscription** to use the plan's answer models and allowance. You can also use your own Anthropic or OpenRouter key from **Settings > Models**.
 - **Live transcript** from one of these sources:
-  - **xAI Grok Voice Transcribe 2.0** (the default): streams your speakers ("Them") and your microphone ("Me") to xAI over WebSockets. Words appear while people are still talking, and each sentence is finalized when they stop. Optional **key terms** help it spell names and jargon correctly. About $0.20 per hour per stream.
+  - **Automatic** (the default): uses xAI when you have an xAI key, then Whisper when you have a speech key, otherwise Windows Live Captions.
+  - **xAI Grok Voice Transcribe 2.0**: streams your speakers ("Them") and your microphone ("Me") to xAI over WebSockets. Words appear while people are still talking, and each sentence is finalized when they stop. Optional **key terms** help it spell names and jargon correctly. Requires your own xAI key; xAI bills speech usage separately.
   - **Windows Live Captions**: free and on-device. Captions everything your PC plays (Zoom, Teams, Meet, browser), without speaker labels.
   - **OpenAI or Groq Whisper** (or any OpenAI-compatible server): sends each phrase as a short clip, with speaker labels.
 - **Auto-answer**: each new line is checked by a small, fast model (Claude Haiku 4.5, about half a second) that decides whether it's a real question worth answering; greetings and small talk are skipped. A Claude answer then streams in about a second after the speaker pauses. Until the other side has said anything (you're testing alone, or listening with the mic only), questions you ask yourself are answered too.
@@ -22,11 +24,23 @@ TheCloser is a Windows desktop app in the spirit of HuddleMate. It listens to yo
 ## Quick start
 
 1. Run `dist\TheCloser.exe`. A round capsule with a waveform appears on the right of your screen, and a tray icon appears. Hover the capsule to slide it open, then click the **monitor** button to open the panel (the **X** at the top closes it again). During a live call the title bar and the capsule fade out until you point at them.
-2. Click the **profile** button in the capsule and go to **Models**. Paste an Anthropic API key from https://console.anthropic.com/settings/keys, then click **Test**.
+2. Click the **profile** button in the capsule and go to **Subscription**. Choose a plan, finish payment in the browser, then return to the app and refresh the subscription. If you prefer your own API keys, go to **Models**, add an Anthropic or OpenRouter key, and click **Test**.
 3. Under **Your context**, add a reference file (product sheet, FAQ, script) and any notes about the call.
-4. Under **Listening**, paste your xAI API key from https://console.x.ai (or set the `XAI_API_KEY` environment variable), then click **Test speech key**.
+4. In **Settings > Models**, choose your transcription source. **Automatic** uses free Windows Live Captions when you have no speech key. For xAI transcription, add your xAI key (or set the `XAI_API_KEY` environment variable) and test it. Cloud transcription requires a separate speech-provider key and is billed by that provider.
 5. Pick the conversation type (top left), then press **Start call**.
    - If you switch to Live Captions instead, the first run shows a Microsoft consent bar at the top of the screen. Click **Yes, continue**. To caption your own voice, open Live Captions > Settings > Preferences and turn on **Include microphone audio**. To keep the caption bar out of the way, set its position to **Floating**.
+
+## Subscriptions and billing
+
+Open **Settings > Subscription** to choose a plan. The app opens Stripe Checkout in your browser; card details are entered on Stripe. After payment, return to TheCloser and refresh the subscription. Activation can take a short time while Stripe confirms payment and the service provisions your allowance; refresh again if the app still says it is setting up.
+
+Windows uses the same **Pro** and **Pro Max** catalog as the Mac app, through `https://www.thecloser.tech/api/`. Prices come from the existing Stripe lookup keys `pro_monthly` and `pro_max_monthly`; the app displays the service's current price and included models. No separate Windows Stripe products are needed. Catalog sharing does not transfer a subscription between devices.
+
+The subscription belongs to this Windows installation. Keep `%APPDATA%\TheCloser\settings.json` when reinstalling the app; deleting it loses the saved installation identifier. The app encrypts that identifier and the subscription pass with Windows DPAPI, so copying the file to another user or PC does not transfer access.
+
+Use **Manage billing** to open Stripe's customer portal for invoices, payment details, plan changes and cancellation. The app shows the current plan, allowance and renewal information after refreshing. Paid access is checked by the service; an interrupted or cancelled checkout does not activate a plan.
+
+Subscription mode routes AI answers through TheCloser's service and uses the models included with your plan. Your own API keys remain available when you switch back to using your keys. **Transcription is separate**: Windows Live Captions runs locally on supported Windows 11 installations; xAI, OpenAI, Groq and other cloud speech sources require your own provider key. A subscription does not supply a speech key or pay those providers' transcription charges.
 
 ## Hotkeys (work from any app)
 
@@ -70,7 +84,10 @@ Self-test, which writes results to `%TEMP%\thecloser-selftest.txt`:
 .\dist\TheCloser.exe --selftest                 # logic, rendering, parsing
 .\dist\TheCloser.exe --selftest --audio         # also plays a quiet phrase and verifies speaker + mic capture
 .\dist\TheCloser.exe --selftest --api           # also calls Claude with your configured key
+.\test.ps1 -CI                                 # offline checks on Windows Server (no Live Captions install check)
 ```
+
+The **Windows build and self-test** GitHub Actions workflow runs on pull requests and can be started manually. It builds the app with the Windows .NET Framework compiler, then runs the offline self-tests, including subscription checkout/pass handling with simulated HTTP responses. It needs no Stripe or AI secrets, does not contact payment services, and uploads the test log and a successful build as artifacts. `-CI` skips only the optional Windows 11 Live Captions installation check; caption parsing is still tested. Audio capture, browser checkout and the desktop experience need a separate Windows 11 smoke test.
 
 The Claude API is called over raw HTTPS with server-sent events (`src/ClaudeClient.cs`). The official Anthropic C# SDK needs NuGet and the .NET SDK. This project deliberately builds with only what's already on Windows.
 
@@ -87,6 +104,8 @@ The UI is WPF (in `src/Ui/`), built in code with the plain C# compiler; there is
 | `src/Ui/Theme.xaml` + `src/Theme.cs` | Control styles and palette (embedded and merged at startup) |
 | `src/Ui/Markdown.cs` | Markdown-to-WPF rendering for the answer view |
 | `src/ClaudeClient.cs` | Streaming Messages API client, with retries and refusal fallback |
+| `src/SubscriptionClient.cs` | Device-bound subscription, Stripe checkout and billing portal, access passes and allowance |
+| `src/SubscriptionSelfTest.cs` | Offline subscription checks using simulated HTTP responses |
 | `src/PromptBuilder.cs` | Mode prompts, cached context and PDFs, transcript and screenshot turns |
 | `src/GrokSpeech.cs` | xAI Grok streaming transcription: WebSocket session per speaker, live and final text, reconnects |
 | `src/LiveCaptionsSource.cs` | Reads Windows Live Captions through UI Automation and splits it into sentences |

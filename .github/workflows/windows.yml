@@ -1,0 +1,53 @@
+name: Windows build and self-test
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build with .NET Framework
+        run: .\build.ps1
+
+      - name: Run offline self-tests
+        run: .\test.ps1 -CI
+
+      - name: Collect self-test log
+        if: always()
+        run: |
+          $testLog = Join-Path $env:TEMP 'thecloser-selftest.txt'
+          if (Test-Path $testLog) { Copy-Item $testLog '.\dist\thecloser-selftest.txt' }
+
+      - name: Upload self-test log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-selftest-log
+          path: dist/thecloser-selftest.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload validated Windows app
+        uses: actions/upload-artifact@v7
+        with:
+          name: TheCloser-windows
+          path: dist/TheCloser.exe
+          if-no-files-found: error
+          retention-days: 14

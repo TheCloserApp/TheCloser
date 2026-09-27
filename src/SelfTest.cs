@@ -11,9 +11,10 @@ using TheCloser.Ui;
 namespace TheCloser
 {
     /// <summary>
-    /// Headless checks: TheCloser.exe --selftest [log-file] [--audio] [--api]
+    /// Headless checks: TheCloser.exe --selftest [log-file] [--audio] [--api] [--ci]
     ///   --audio  plays a short, quiet speech clip and verifies speaker-loopback capture + phrase detection
     ///   --api    calls the Claude API (needs a key in settings or ANTHROPIC_API_KEY)
+    ///   --ci     skips the Live Captions installation check on Windows Server build agents
     /// </summary>
     internal static class SelfTest
     {
@@ -40,8 +41,13 @@ namespace TheCloser
             string logPath = args.Length > 1 && args[1].Length > 0 && !args[1].StartsWith("--") ? args[1] : Path.Combine(Path.GetTempPath(), "thecloser-selftest.txt");
             bool audio = args.Contains("--audio");
             bool api = args.Contains("--api");
+            bool ci = args.Contains("--ci");
 
             Try("settings + JSON round trip", TestSettings);
+            Try("subscription client", delegate
+            {
+                SubscriptionSelfTest.Run(delegate(bool ok, string name) { Check(name, ok, null); });
+            });
             Try("prompt builder", TestPrompt);
             Try("markdown rendering", TestMarkdown);
             Try("question detector", TestQuestions);
@@ -51,7 +57,8 @@ namespace TheCloser
             if (api) Try("xAI Grok live connection", TestGrokLive);
             Try("live captions availability", delegate
             {
-                Check("LiveCaptions.exe present", LiveCaptionsSource.IsAvailable, LiveCaptionsSource.ExePath);
+                if (ci) Note("skipped: Live Captions is an optional Windows 11 feature, unavailable on Windows Server CI");
+                else Check("LiveCaptions.exe present", LiveCaptionsSource.IsAvailable, LiveCaptionsSource.ExePath);
             });
             if (audio) Try("speaker loopback capture", TestLoopback);
             if (audio) Try("microphone capture", TestMic);
