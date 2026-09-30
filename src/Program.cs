@@ -8,6 +8,11 @@ using System.Windows;
 // csc doesn't stamp a target framework by itself; without this the runtime applies legacy
 // compatibility defaults (e.g. TLS 1.0 only for HTTPS and WebSockets).
 [assembly: System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
+// Shown in the file's Properties > Details. Bump with each release.
+[assembly: System.Reflection.AssemblyTitle("TheCloser")]
+[assembly: System.Reflection.AssemblyProduct("TheCloser")]
+[assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.0.0.0")]
 
 namespace TheCloser
 {
