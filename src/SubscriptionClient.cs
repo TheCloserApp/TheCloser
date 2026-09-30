@@ -177,16 +177,22 @@ namespace TheCloser
         }
 
         /// <summary>
-        /// A token for Grok transcription that lasts a few minutes: Pro (subscribers and testers) transcribes the
-        /// interviewer with Grok Transcribe 2 without the app ever holding our xAI key. Null when the server has no xAI
-        /// set up or refuses; Pro then transcribes with Windows Live Captions.
+        /// A short-lived transcription token: Pro (subscribers and testers) transcribes the interviewer with Grok
+        /// Transcribe 2 or ElevenLabs without the app ever holding our keys. Null when the server doesn't have that
+        /// provider set up or refuses; Pro then transcribes with Windows Live Captions.
         /// </summary>
-        public async Task<string> SttTokenAsync()
+        public Task<string> SttTokenAsync()
+        {
+            return SttTokenAsync("grok");
+        }
+
+        /// <param name="provider">"grok" or "elevenlabs" (ElevenLabs' tokens work once).</param>
+        public async Task<string> SttTokenAsync(string provider)
         {
             try
             {
                 await EnsureActiveAsync(CancellationToken.None).ConfigureAwait(false);
-                var response = await SendAsync("stt-token", Json.Obj(), S.SubscriptionPass, CancellationToken.None).ConfigureAwait(false);
+                var response = await SendAsync("stt-token", Json.Obj("provider", provider), S.SubscriptionPass, CancellationToken.None).ConfigureAwait(false);
                 var token = Json.Str(response, "token");
                 return string.IsNullOrEmpty(token) ? null : token;
             }

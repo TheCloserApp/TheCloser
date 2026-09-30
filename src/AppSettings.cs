@@ -56,6 +56,7 @@ namespace TheCloser
 
         // --- Listening ---
         public string Transcription { get; set; }         // Automatic | LiveCaptions (Windows, on-device) | ElevenLabs | Grok
+        public string ProTranscription { get; set; }      // on Pro: Grok | ElevenLabs (both included) | LiveCaptions
         public string AudioSource { get; set; }           // Both | System | Mic
         public string GrokModel { get; set; }
         public string KeyTerms { get; set; }
@@ -99,6 +100,7 @@ namespace TheCloser
             Files = new List<string>();
             AutoGenerate = true;
             Transcription = "Automatic";
+            ProTranscription = "Grok";
             AudioSource = "Both";
             GrokModel = "grok-voice-transcribe-2.0";
             KeyTerms = "";
@@ -111,8 +113,8 @@ namespace TheCloser
             KeywordStyle = "lightBlue";
             HideFromCapture = true;
             OfferOnCall = true;
-            ShowTranscript = false;
-            FocusMode = false;
+            ShowTranscript = true;
+            FocusMode = true;
             OnboardingDone = false;
             ReplayTurns = true;
             ReplayAllTurns = false;
@@ -147,16 +149,17 @@ namespace TheCloser
         [ScriptIgnore] public bool CaptureSystem { get { return AudioSource != "Mic"; } }
 
         /// <summary>
-        /// The transcription engine actually used. Pro transcribes the interviewer with Grok on TheCloser's xAI account
-        /// ("ProGrok"); a cloud engine without its key falls back to Windows Live Captions; "Automatic" prefers
-        /// ElevenLabs, then Grok. Same rules as the Mac app.
+        /// The transcription engine actually used. Pro transcribes the interviewer on TheCloser's account with Grok
+        /// ("ProGrok", the default) or ElevenLabs ("ProElevenLabs"), or on this PC; a cloud engine without its key falls
+        /// back to Windows Live Captions; "Automatic" prefers ElevenLabs, then Grok. Same rules as the Mac app.
         /// </summary>
         [ScriptIgnore]
         public string EffectiveTranscription
         {
             get
             {
-                if (UseSubscription && SubscriptionClient.HasActivePass(this)) return "ProGrok";
+                if (UseSubscription && SubscriptionClient.HasActivePass(this))
+                    return ProTranscription == "LiveCaptions" ? "LiveCaptions" : ProTranscription == "ElevenLabs" ? "ProElevenLabs" : "ProGrok";
                 switch (Transcription)
                 {
                     case "LiveCaptions": return "LiveCaptions";
@@ -240,6 +243,7 @@ namespace TheCloser
             if (EditedPrompts == null) EditedPrompts = new List<PromptDef>();
             if (PromptId == null || !Prompts.All(this).Any(p => p.Id == PromptId)) PromptId = Prompts.DefaultId; // deleted, or the old defaults
             if (Transcription != "LiveCaptions" && Transcription != "ElevenLabs" && Transcription != "Grok") Transcription = "Automatic";
+            if (ProTranscription != "LiveCaptions" && ProTranscription != "ElevenLabs") ProTranscription = "Grok";
             if (ResumeFile == null) ResumeFile = "";
             if (Context == null) Context = "";
             if (KeyTerms == null) KeyTerms = "";

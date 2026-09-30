@@ -236,13 +236,13 @@ namespace TheCloser
                 var plain = runs.First(r => r.Text.StartsWith("Use"));
                 var fg = KeywordStyles.Foreground(style);
                 var bg = KeywordStyles.Background(style);
-                bool ok = keyword.FontWeight == System.Windows.FontWeights.Bold &&
+                bool ok = keyword.FontWeight == (style == KeywordStyles.Off ? System.Windows.FontWeights.Normal : System.Windows.FontWeights.Bold) &&
                           (fg == null ? keyword.ReadLocalValue(System.Windows.Documents.TextElement.ForegroundProperty) == System.Windows.DependencyProperty.UnsetValue : keyword.Foreground == fg) &&
                           (bg == null ? keyword.Background == null : keyword.Background == bg) &&
                           plain.Background == null && plain.ReadLocalValue(System.Windows.Documents.TextElement.ForegroundProperty) == System.Windows.DependencyProperty.UnsetValue;
                 Check("keywords in " + KeywordStyles.Name(style) + " style", ok, null);
             }
-            Check("eight styles, four highlights", KeywordStyles.Ids.Length == 8 && KeywordStyles.Ids.Count(KeywordStyles.IsHighlight) == 4, null);
+            Check("nine styles (Off first), four highlights", KeywordStyles.Ids.Length == 9 && KeywordStyles.Ids[0] == KeywordStyles.Off && KeywordStyles.Ids.Count(KeywordStyles.IsHighlight) == 4, null);
         }
 
         private static void TestCaptionDiff()

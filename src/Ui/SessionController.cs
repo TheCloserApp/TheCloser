@@ -27,6 +27,7 @@ namespace TheCloser.Ui
         private bool _themHeard;                     // the other side has spoken; until then the user's own questions count
         private bool _saidOtherLanguage;
         private DateTime _resumedAt;
+        private bool _preview;                       // `--render`: shown as live, never listens or saves
 
         public Session Current { get; private set; }
         public bool Active { get; private set; }     // a live session (listening or paused)
@@ -93,6 +94,18 @@ namespace TheCloser.Ui
             Raise(TranscriptChanged);
         }
 
+        /// <summary>Shows a session as if live but paused: no listening, nothing saved (`--render`).</summary>
+        internal void PreviewLive(Session session)
+        {
+            Current = session;
+            Active = true;
+            Paused = true;
+            _preview = true;
+            Raise(StateChanged);
+            Raise(QasChanged);
+            Raise(TranscriptChanged);
+        }
+
         public void Pause()
         {
             if (!Active || Paused) return;
@@ -124,7 +137,8 @@ namespace TheCloser.Ui
             Active = false;
             Paused = false;
             Speaking = false;
-            SessionStore.Save(Current);
+            if (!_preview) SessionStore.Save(Current);
+            _preview = false;
             Raise(StateChanged);
         }
 
@@ -169,7 +183,8 @@ namespace TheCloser.Ui
             if (_src != null) return;
             ITranscriptSource src;
             var engine = S.EffectiveTranscription;
-            if (engine == "ProGrok") { StartProSource(); return; }
+            if (engine == "ProGrok") { StartProSource("grok"); return; }
+            if (engine == "ProElevenLabs") { StartProSource("elevenlabs"); return; }
             if (engine == "ElevenLabs") src = new ElevenLabsStreamingSource(S.Clone());
             else if (engine == "Grok") src = new GrokStreamingSource(S.Clone());
             else
@@ -183,27 +198,31 @@ namespace TheCloser.Ui
         private int _proStart;   // a newer start (or a stop) makes an older token fetch stand down
 
         /// <summary>
-        /// Pro: Grok Transcribe 2 on a short-lived token from TheCloser's server, listening to the interviewer only (one
-        /// stream) unless you picked the microphone alone. Without a token it uses Windows Live Captions instead.
+        /// Pro: Grok Transcribe 2 or ElevenLabs on a short-lived token from TheCloser's server, listening to the
+        /// interviewer only (one stream) unless you picked the microphone alone. Without a token it uses Windows Live
+        /// Captions instead.
         /// </summary>
-        private async void StartProSource()
+        private async void StartProSource(string provider)
         {
             int attempt = ++_proStart;
             var billing = Billing;
-            var token = billing == null ? null : await billing.SttTokenAsync();
+            var token = billing == null ? null : await billing.SttTokenAsync(provider);
             if (attempt != _proStart || _src != null || !Active || Paused) return;
             ITranscriptSource src;
             if (token != null)
             {
                 bool first = true;
-                var grok = new GrokStreamingSource(S.Clone()) { InterviewerOnly = true };
+                StreamingSpeechSource stream = provider == "elevenlabs"
+                    ? (StreamingSpeechSource)new ElevenLabsStreamingSource(S.Clone())
+                    : new GrokStreamingSource(S.Clone());
+                stream.InterviewerOnly = true;
                 // The first connection uses the token already fetched; reconnects fetch a fresh one.
-                grok.TokenProvider = delegate
+                stream.TokenProvider = delegate
                 {
                     if (first) { first = false; return Task.FromResult(token); }
-                    return billing.SttTokenAsync();
+                    return billing.SttTokenAsync(provider);
                 };
-                src = grok;
+                src = stream;
             }
             else if (LiveCaptionsSource.IsAvailable) src = new LiveCaptionsSource();
             else { Say("Pro transcription isn't available right now. Try again in a moment.", true); return; }

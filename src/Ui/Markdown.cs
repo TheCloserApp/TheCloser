@@ -174,7 +174,8 @@ namespace TheCloser.Ui
             {
                 if (buf.Length == 0) return;
                 var run = new Run(buf.ToString());
-                if (bold)
+                // "Off": keywords read as plain text.
+                if (bold && keywordStyle != KeywordStyles.Off)
                 {
                     run.FontWeight = FontWeights.Bold;
                     if (keywordFg != null) run.Foreground = keywordFg;
