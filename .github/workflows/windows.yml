@@ -44,6 +44,22 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Render every screen
+        if: always()
+        run: |
+          $p = Start-Process -FilePath .\dist\TheCloser.exe -ArgumentList '--render', "`"$PWD\dist\screens`"" -PassThru -Wait
+          if (Test-Path .\dist\screens\render-log.txt) { Get-Content .\dist\screens\render-log.txt }
+          if ($p.ExitCode -ne 0) { throw "Rendering failed ($($p.ExitCode))" }
+
+      - name: Upload screens
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-screens
+          path: dist/screens
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload validated Windows app
         uses: actions/upload-artifact@v7
         with:
