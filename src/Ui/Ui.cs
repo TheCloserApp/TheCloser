@@ -16,22 +16,22 @@ namespace TheCloser.Ui
         public static readonly FontFamily Icons = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
         public static readonly FontFamily Mono = new FontFamily("Cascadia Mono, Consolas");
 
-        public static readonly SolidColorBrush Text = B(0xFFF2F2F4);
-        public static readonly SolidColorBrush Text2 = B(0xFFA1A1A8);
-        public static readonly SolidColorBrush Text3 = B(0xFF6C6C72);
-        public static readonly SolidColorBrush Line = B(0xFF26262A);
-        public static readonly SolidColorBrush Border = B(0xFF2A2A2D);
-        public static readonly SolidColorBrush Inner = B(0xFF1D1D20);
-        public static readonly SolidColorBrush Green = B(0xFF23B27E);
-        public static readonly SolidColorBrush Blue = B(0xFF0A84FF);
+        public static readonly SolidColorBrush Text = B(0xFFEDEDED);
+        public static readonly SolidColorBrush Text2 = B(0xFFA1A1A1);
+        public static readonly SolidColorBrush Text3 = B(0xFF808080);
+        public static readonly SolidColorBrush Line = B(0xFF222222);
+        public static readonly SolidColorBrush Border = B(0xFF262626);
+        public static readonly SolidColorBrush Inner = B(0xFF1A1A1A);
+        public static readonly SolidColorBrush Green = B(0xFF34C759);
+        public static readonly SolidColorBrush Blue = B(0xFF3B8EFF);
         public static readonly SolidColorBrush Red = B(0xFFFF453A);
         public static readonly SolidColorBrush RecText = B(0xFFFF6A61);
         public static readonly SolidColorBrush RecBg = B(0xFF3B1718);
-        public static readonly SolidColorBrush Amber = B(0xFFF5A524);
+        public static readonly SolidColorBrush Amber = B(0xFFFF9F0A);
         public static readonly SolidColorBrush WarnBg = B(0xFF2D2313);
         public static readonly SolidColorBrush WarnBorder = B(0xFF5C4617);
         public static readonly SolidColorBrush CodeBg = B(0xFF0F0F11);
-        public static readonly SolidColorBrush Chip = B(0xFF2A2A2E);
+        public static readonly SolidColorBrush Chip = B(0xFF292929);
 
         // Glyphs (Segoe Fluent Icons / MDL2)
         public const string GClose = "", GCompose = "", GMore = "", GList = "", GHide = "",
@@ -40,7 +40,11 @@ namespace TheCloser.Ui
             GPane = "", GMonitor = "", GGlobe = "", GPerson = "", GSearch = "", GLink = "",
             GNewWindow = "", GWarn = "", GPlay = "", GCheck = "", GTrash = "", GAdd = "",
             GMic = "", GDoc = "", GArrowRight = "", GQuestion = "", GEdit = "", GPause = "",
-            GCamera = "", GCopy = "";
+            GCamera = "", GCopy = "",
+            GMemory = "\uE8F1", GRemove = "\uE738", GPeople = "\uE716", GPhone = "\uE717", GStop = "\uE71A",
+            GPower = "\uE7E8", GUndo = "\uE7A7", GExport = "\uEDE1", GWand = "\uE945", GCpu = "\uE950",
+GContrast = "\uE793", GLayers = "\uE81E", GFont = "\uE8D2", GHighlight = "\uE7E6",
+            GKey = "\uE8D7", GLock = "\uE72E", GVideo = "\uE714";
 
         public static Color C(uint argb)
         {
@@ -75,6 +79,23 @@ namespace TheCloser.Ui
             var t = new TextBlock { Text = glyph, FontFamily = Icons, FontSize = size, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center };
             if (fg != null) t.Foreground = fg;
             return t;
+        }
+
+        /// <summary>
+        /// An eye with a slash ("hidden"), drawn over the eye glyph: the Hide glyph is missing from the icon font on
+        /// Windows Server and older Windows 10. With fg == null it inherits the parent's foreground.
+        /// </summary>
+        public static FrameworkElement EyeSlash(double size, Brush fg)
+        {
+            var g = new Grid { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            var eye = Icon(GView, size, fg);
+            g.Children.Add(eye);
+            var slash = new Line { X1 = size * 0.12, Y1 = size * 0.12, X2 = size * 0.88, Y2 = size * 0.88, StrokeThickness = Math.Max(1, size / 12), StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
+            slash.SetBinding(Shape.StrokeProperty, new System.Windows.Data.Binding("Foreground") { Source = eye });
+            g.Children.Add(slash);
+            g.Width = size;
+            g.Height = size;
+            return g;
         }
 
         /// <summary>Icon + label, used as button content.</summary>

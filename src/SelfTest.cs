@@ -13,7 +13,7 @@ namespace TheCloser
     /// <summary>
     /// Headless checks: TheCloser.exe --selftest [log-file] [--audio] [--api] [--ci]
     ///   --audio  plays a short, quiet speech clip and verifies speaker-loopback capture + phrase detection
-    ///   --api    calls the Claude API (needs a key in settings or ANTHROPIC_API_KEY)
+    ///   --api    calls OpenRouter (needs a key in settings or OPENROUTER_API_KEY) and xAI
     ///   --ci     skips the Live Captions installation check on Windows Server build agents
     /// </summary>
     internal static class SelfTest
@@ -48,12 +48,16 @@ namespace TheCloser
             {
                 SubscriptionSelfTest.Run(delegate(bool ok, string name) { Check(name, ok, null); });
             });
+            Try("prompts", TestPrompts);
+            Try("required keys and transcription engine", TestKeys);
             Try("prompt builder", TestPrompt);
             Try("markdown rendering", TestMarkdown);
+            Try("keyword styles", TestKeywordStyles);
             Try("question detector", TestQuestions);
             Try("live captions diffing", TestCaptionDiff);
             Try("segmenter (synthetic audio)", TestSegmenter);
             Try("xAI Grok streaming protocol", TestGrokProtocol);
+            Try("ElevenLabs streaming protocol", TestElevenLabsProtocol);
             if (api) Try("xAI Grok live connection", TestGrokLive);
             Try("live captions availability", delegate
             {
@@ -62,7 +66,7 @@ namespace TheCloser
             });
             if (audio) Try("speaker loopback capture", TestLoopback);
             if (audio) Try("microphone capture", TestMic);
-            if (api) Try("Claude API", TestApi);
+            if (api) Try("OpenRouter answers", TestApi);
 
             _log.AppendLine();
             _log.AppendLine(_failures == 0 ? "ALL CHECKS PASSED" : _failures + " CHECK(S) FAILED");
@@ -87,7 +91,6 @@ namespace TheCloser
                 Kind = kind,
                 UserText = userText,
                 ScreenshotJpegBase64 = screenshot,
-                Length = s.Length,
                 Effort = s.Effort
             };
             PromptBuilder.AddContext(req, s);
@@ -97,65 +100,99 @@ namespace TheCloser
         private static void TestSettings()
         {
             var s = new AppSettings();
-            s.AnthropicKey = "sk-ant-test-123";
+            s.OpenRouterKey = "sk-or-test-123";
+            s.ElevenLabsKey = "sk_eleven-test-456";
             s.Context = "Line 1\nLine \"2\" with unicode \u00E9\u2013";
-            s.Files.Add(@"C:\x\product-sheet.pdf");
+            s.Files.Add(@"C:\x\resume.pdf");
             var json = Json.Serialize(s);
-            Check("plain key not in JSON", !json.Contains("sk-ant-test-123"), null);
+            Check("plain keys not in JSON", !json.Contains("sk-or-test-123") && !json.Contains("sk_eleven-test-456"), null);
             var back = Json.Deserialize<AppSettings>(json);
-            Check("key decrypts", back.AnthropicKey == "sk-ant-test-123", null);
+            Check("keys decrypt", back.OpenRouterKey == "sk-or-test-123" && back.ElevenLabsKey == "sk_eleven-test-456", null);
             Check("context survives", back.Context == s.Context, null);
-            Check("files survive", back.Files.Count == 1 && back.Files[0] == @"C:\x\product-sheet.pdf", null);
-            Check("defaults", back.Model == "anthropic/claude-opus-5" && back.Effort == "low" && back.HideFromCapture, back.Model);
+            Check("files survive", back.Files.Count == 1 && back.Files[0] == @"C:\x\resume.pdf", null);
+            var d = AppSettings.Defaults();
+            Check("defaults match the Mac", d.Model == "anthropic/claude-sonnet-5" && d.PromptId == "" && d.SpeechLanguage == "en" &&
+                  d.BackgroundPct == 60 && d.TextSizePct == 100 && d.KeywordStyle == "lightBlue" && d.HideFromCapture && d.AutoGenerate &&
+                  d.ReplayTurns && !d.ReplayAllTurns && d.ReplayTurnCount == 6 && !d.PullPastSessions, d.Model);
+            Check("the Mac's ten models", ModelCatalog.Curated.Length == 10 && d.EnabledModels.Count == 10, null);
 
-            var ps = new AppSettings();
-            Check("built-in prompt deletes", Prompts.Delete(ps, "call") && !Prompts.All(ps).Any(p => p.Id == "call") && ps.PromptId != "call", ps.PromptId);
-            Check("deleted built-in still resolves for old sessions", Prompts.Find(ps, "call").Id == "call", null);
-            var kept = Json.Deserialize<AppSettings>(Json.Serialize(ps)).Clone();
-            Check("deleted prompts stay deleted", kept.HiddenPrompts.Contains("call") && kept.PromptId != "call", kept.PromptId);
-            Prompts.Delete(ps, "sales");
-            Prompts.Delete(ps, "meeting");
-            Check("the last prompt can't be deleted", !Prompts.Delete(ps, "general") && Prompts.All(ps).Count == 1, null);
-            Prompts.RestoreBuiltIns(ps);
-            Check("built-ins restore", Prompts.All(ps).Count == 4, null);
-
-            var original = Prompts.SystemText(new AppSettings(), "sales");
-            Prompts.EditBuiltIn(ps, "sales", "Sales (mine)", "Always mention the free trial.");
-            var edited = Json.Deserialize<AppSettings>(Json.Serialize(ps)).Clone();
-            Check("built-in prompt edits apply and persist", Prompts.SystemText(edited, "sales").Contains("free trial") &&
-                  Prompts.All(edited).Any(p => p.Name == "Sales (mine)") && Prompts.IsEdited(edited, "sales"), null);
-            Check("editing doesn't touch the shipped prompt", Prompts.SystemText(new AppSettings(), "sales") == original, null);
-            Prompts.ResetBuiltIn(edited, "sales");
-            Check("reset to original", Prompts.SystemText(edited, "sales") == original && !Prompts.IsEdited(edited, "sales"), null);
+            var old = Json.Deserialize<AppSettings>("{\"Model\":\"anthropic/claude-opus-5\",\"PromptId\":\"sales\",\"Transcription\":\"Whisper\",\"TextSizePct\":190,\"KeywordStyle\":\"x\"}").Clone();
+            Check("old settings move to the new defaults", old.Model == "anthropic/claude-sonnet-5" && old.PromptId == "" &&
+                  old.Transcription == "Automatic" && old.TextSizePct == 160 && old.KeywordStyle == "lightBlue", old.Model + " " + old.PromptId + " " + old.Transcription);
 
             var legacy = Json.Deserialize<AppSettings>("{\"Model\":\"claude-haiku-4-5\",\"EnabledModels\":[\"claude-haiku-4-5\",\"anthropic/claude-haiku-4.5\",\"claude-opus-5-5\"]}").Clone();
             Check("bare claude id normalized", legacy.Model == "anthropic/claude-haiku-4.5", legacy.Model);
-            Check("normalized models deduped", legacy.EnabledModels.SequenceEqual(new[] { "anthropic/claude-haiku-4.5", "anthropic/claude-opus-5-5" }), string.Join(", ", legacy.EnabledModels));
-            legacy.AnthropicKey = "sk-ant-test-123";
-            Check("bare claude id routes to anthropic", ModelCatalog.Resolve(legacy, legacy.Model).Provider == "anthropic", null);
+            Check("normalized models deduped", legacy.EnabledModels.SequenceEqual(new[] { "anthropic/claude-haiku-4.5", "anthropic/claude-opus-5.5" }), string.Join(", ", legacy.EnabledModels));
+            Check("no key, no route", ModelCatalog.Resolve(legacy, legacy.Model).Provider == null, null);
+            legacy.OpenRouterKey = "sk-or-test";
+            Check("every model routes through OpenRouter", ModelCatalog.Resolve(legacy, legacy.Model).Provider == "openrouter", null);
+        }
+
+        private static void TestPrompts()
+        {
+            var s = new AppSettings();
+            Check("four built-ins, like the Mac", Prompts.All(s).Select(p => p.Name).SequenceEqual(new[] { "General", "Interview", "Meeting", "Call" }), null);
+            Check("default is the interview prompt", Prompts.DisplayName(s, "") == "Default (Interview)" && Prompts.SystemText(s, "").Contains("real-time interview copilot"), null);
+            Check("interview prompt keeps its own bold rule", !Prompts.SystemText(s, "interview").Contains(Prompts.KeywordRule), null);
+            Check("a prompt without one gets the keyword rule", Prompts.SystemText(s, "meeting").EndsWith(Prompts.KeywordRule), null);
+            Check("transcript rules come first", Prompts.SystemText(s, "call").StartsWith(Prompts.BaseRules), null);
+
+            s.PromptId = "call";
+            Prompts.Delete(s, "call");
+            Check("deleting the picked prompt falls back to the default", s.PromptId == "" && !Prompts.All(s).Any(p => p.Id == "call"), s.PromptId);
+            Check("a deleted built-in still resolves for old sessions", Prompts.Find(s, "call") != null && Prompts.Find(s, "call").Name == "Call", null);
+            foreach (var p in Prompts.All(s).ToList()) Prompts.Delete(s, p.Id);
+            Check("every prompt can go; the default stays", Prompts.All(s).Count == 0 && Prompts.DisplayName(s, s.PromptId) == "Default (Interview)", null);
+            var kept = Json.Deserialize<AppSettings>(Json.Serialize(s)).Clone();
+            Check("deleted prompts stay deleted", kept.HiddenPrompts.Count == 4, null);
+            Prompts.RestoreBuiltIns(s);
+            Check("built-ins restore", Prompts.All(s).Count == 4, null);
+
+            var original = Prompts.SystemText(new AppSettings(), "meeting");
+            Prompts.EditBuiltIn(s, "meeting", "Meeting (mine)", "Always **bold** the owner of each action item.");
+            var edited = Json.Deserialize<AppSettings>(Json.Serialize(s)).Clone();
+            Check("built-in prompt edits apply and persist", Prompts.SystemText(edited, "meeting").Contains("owner of each action item") &&
+                  Prompts.All(edited).Any(p => p.Name == "Meeting (mine)") && Prompts.IsEdited(edited, "meeting"), null);
+            Check("an edit that mentions bold drops the keyword rule", !Prompts.SystemText(edited, "meeting").Contains(Prompts.KeywordRule), null);
+            Check("editing doesn't touch the shipped prompt", Prompts.SystemText(new AppSettings(), "meeting") == original, null);
+            Prompts.ResetBuiltIn(edited, "meeting");
+            Check("reset to original", Prompts.SystemText(edited, "meeting") == original && !Prompts.IsEdited(edited, "meeting"), null);
+        }
+
+        private static void TestKeys()
+        {
+            var s = new AppSettings();
+            Check("both keys missing", s.MissingKeysText == "Add your OpenRouter and ElevenLabs keys to start. Click to open API keys.", s.MissingKeysText);
+            s.OpenRouterKey = "sk-or-x";
+            Check("one key missing", s.MissingKeysText == "Add your ElevenLabs key to start. Click to open API keys.", s.MissingKeysText);
+            Check("no ElevenLabs key: Windows transcribes", s.EffectiveTranscription == "LiveCaptions", s.EffectiveTranscription);
+            s.ElevenLabsKey = "sk_x";
+            Check("ready with both", s.MissingKeys.Count == 0 && s.EffectiveTranscription == "ElevenLabs", s.EffectiveTranscription);
+            s.Transcription = "Grok";
+            Check("Grok needs an xAI key instead", s.MissingKeys.SequenceEqual(new[] { "xAI" }) && s.EffectiveTranscription == "LiveCaptions", null);
+            s.XaiKey = "xai-x";
+            Check("Grok with its key", s.MissingKeys.Count == 0 && s.EffectiveTranscription == "Grok", null);
+            s.Transcription = "LiveCaptions";
+            Check("Windows engine picked", s.EffectiveTranscription == "LiveCaptions", null);
+            s.Transcription = "Automatic";
+            Check("automatic prefers ElevenLabs", s.EffectiveTranscription == "ElevenLabs", null);
         }
 
         private static void TestPrompt()
         {
-            var s = new AppSettings { Context = "Selling Acme Pay to a mid-market prospect.", PromptId = "sales" };
-            var body = PromptBuilder.ForAnthropic(MakeRequest(s, "[Them] Why should we switch from our current provider?", AnswerKind.Auto, null, null), "claude-opus-5");
-            var json = Json.Serialize(body);
-            Check("has cache_control", json.Contains("\"cache_control\":{\"type\":\"ephemeral\"}"), null);
-            Check("has effort for opus", json.Contains("\"output_config\":{\"effort\":\"low\"}"), null);
-            Check("transcript in user turn", json.Contains("Why should we switch from our current provider?"), null);
-            Check("context is prompt-cached", json.Contains("Acme Pay"), null);
-            Check("no stream flag yet", !json.Contains("\"stream\""), null);
+            var s = new AppSettings { Context = "Interviewing for a backend role at Acme Pay." };
+            var req = MakeRequest(s, "[Them] Why do you want to work here?", AnswerKind.Auto, null, null);
+            req.Recent.Add(new QaItem { Question = "Tell me about yourself.", Answer = "I build payment systems." });
+            req.Past.Add(new QaItem { Question = "What's your biggest weakness?", Answer = "I over-document." });
+            var json = Json.Serialize(PromptBuilder.ForOpenRouter(req, "anthropic/claude-sonnet-5"));
+            Check("openrouter payload", json.Contains("\"reasoning\"") && json.Contains("\"messages\"") && json.Contains("anthropic/claude-sonnet-5"), null);
+            Check("transcript in user turn", json.Contains("Why do you want to work here?"), null);
+            Check("context in the system prompt", json.Contains("Acme Pay"), null);
+            Check("this session's answers replayed", json.Contains("earlier_answers") && json.Contains("I build payment systems."), null);
+            Check("past sessions' answers replayed", json.Contains("past_sessions") && json.Contains("I over-document."), null);
             Check("valid JSON", Json.Parse(json) is Dictionary<string, object>, null);
-
-            var haiku = Json.Serialize(PromptBuilder.ForAnthropic(MakeRequest(new AppSettings(), "", AnswerKind.Manual, null, null), "claude-haiku-4-5"));
-            Check("no effort for haiku", !haiku.Contains("output_config"), null);
-            Check("fallbacks only on supported models", ClaudeClient.SupportsFallbacks("claude-opus-5") && !ClaudeClient.SupportsFallbacks("claude-haiku-4-5"), null);
-
-            var img = Json.Serialize(PromptBuilder.ForAnthropic(MakeRequest(new AppSettings(), "", AnswerKind.Screen, "focus on Q3", "AAAA"), "claude-opus-5"));
-            Check("screen request has image block", img.Contains("\"type\":\"image\"") && img.Contains("image/jpeg") && img.Contains("focus on Q3"), null);
-
-            var or = Json.Serialize(PromptBuilder.ForOpenRouter(MakeRequest(new AppSettings(), "[Them] hi", AnswerKind.Auto, null, null), "openai/gpt-5.4-mini"));
-            Check("openrouter payload", or.Contains("\"reasoning\"") && or.Contains("\"messages\"") && or.Contains("openai/gpt-5.4-mini"), null);
+            var img = Json.Serialize(PromptBuilder.ForOpenRouter(MakeRequest(new AppSettings(), "", AnswerKind.Screen, "focus on Q3", "AAAA"), "openai/gpt-5.5"));
+            Check("screen request has image block", img.Contains("image_url") && img.Contains("image/jpeg") && img.Contains("focus on Q3"), null);
         }
 
         private static void TestMarkdown()
@@ -184,8 +221,28 @@ namespace TheCloser
             Check("gate: skip", !QuestionGate.Parse("SKIP").Answer && !QuestionGate.Parse("").Answer && !QuestionGate.Parse(null).Answer, null);
             var req = MakeRequest(new AppSettings(), "[Me] What is JavaScript?", AnswerKind.Auto, null, null);
             req.Question = "What is JavaScript?";
-            var body = Json.Serialize(PromptBuilder.ForAnthropic(req, "claude-haiku-4-5"));
+            var body = Json.Serialize(PromptBuilder.ForOpenRouter(req, "anthropic/claude-haiku-4.5"));
             Check("detected question goes to the model", body.Contains("Answer this question") && body.Contains("What is JavaScript?"), null);
+        }
+
+        private static void TestKeywordStyles()
+        {
+            foreach (var style in KeywordStyles.Ids)
+            {
+                var root = MarkdownView.Render("Use **PostgreSQL** for payments.", 14, style);
+                var tb = (System.Windows.Controls.TextBlock)root.Children[0];
+                var runs = tb.Inlines.OfType<System.Windows.Documents.Run>().ToList();
+                var keyword = runs.First(r => r.Text == "PostgreSQL");
+                var plain = runs.First(r => r.Text.StartsWith("Use"));
+                var fg = KeywordStyles.Foreground(style);
+                var bg = KeywordStyles.Background(style);
+                bool ok = keyword.FontWeight == System.Windows.FontWeights.Bold &&
+                          (fg == null ? keyword.ReadLocalValue(System.Windows.Documents.TextElement.ForegroundProperty) == System.Windows.DependencyProperty.UnsetValue : keyword.Foreground == fg) &&
+                          (bg == null ? keyword.Background == null : keyword.Background == bg) &&
+                          plain.Background == null && plain.ReadLocalValue(System.Windows.Documents.TextElement.ForegroundProperty) == System.Windows.DependencyProperty.UnsetValue;
+                Check("keywords in " + KeywordStyles.Name(style) + " style", ok, null);
+            }
+            Check("eight styles, four highlights", KeywordStyles.Ids.Length == 8 && KeywordStyles.Ids.Count(KeywordStyles.IsHighlight) == 4, null);
         }
 
         private static void TestCaptionDiff()
@@ -282,6 +339,37 @@ namespace TheCloser
             Check("locked text flushed on done", finals.Count == 2 && finals[1] == "Take your time", null);
         }
 
+        private static void TestElevenLabsProtocol()
+        {
+            var url = ElevenLabsStreamingSource.BuildUrl(new AppSettings { SpeechLanguage = "en" });
+            Note(url);
+            Check("websocket url", url.StartsWith("wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&audio_format=pcm_16000&commit_strategy=vad"), null);
+            Check("language sent", url.Contains("&language_code=en") && url.Contains("vad_silence_threshold_secs=0.6"), null);
+            Check("detect: no language", !ElevenLabsStreamingSource.BuildUrl(new AppSettings { SpeechLanguage = "" }).Contains("language_code"), null);
+            var chunk = Json.Parse(ElevenLabsStreamingSource.AudioMessage(new byte[] { 1, 2, 3, 4 }, false));
+            Check("audio chunk message", Json.Str(chunk, "message_type") == "input_audio_chunk" && Json.Str(chunk, "audio_base_64") == "AQIDBA==" &&
+                  object.Equals(Json.Get(chunk, "commit"), false) && Json.Str(chunk, "sample_rate") == "16000", null);
+
+            var src = new ElevenLabsStreamingSource(new AppSettings());
+            var ch = StreamingSpeechSource.TestChannel("Them");
+            var finals = new List<string>();
+            var partials = new List<string>();
+            string status = null;
+            src.Transcript += e => { if (e.IsFinal) finals.Add(e.Text); else partials.Add(e.Text); };
+            src.Status += st => status = st;
+            var ready = new TaskCompletionSource<bool>();
+            src.OnServerEvent(ch, "{\"message_type\":\"session_started\",\"session_id\":\"x\"}", ready);
+            src.OnServerEvent(ch, "{\"message_type\":\"partial_transcript\",\"text\":\"Tell me about\"}", ready);
+            src.OnServerEvent(ch, "{\"message_type\":\"partial_transcript\",\"text\":\"Tell me about a time you failed\"}", ready);
+            src.OnServerEvent(ch, "{\"message_type\":\"committed_transcript\",\"text\":\"Tell me about a time you failed?\"}", ready);
+            src.OnServerEvent(ch, "{\"message_type\":\"committed_transcript\",\"text\":\"\"}", ready);
+            src.OnServerEvent(ch, "{\"message_type\":\"auth_error\",\"message\":\"Invalid API key\"}", ready);
+            Check("ready on session_started", ready.Task.IsCompleted, null);
+            Check("live text", partials.Contains("Tell me about a time you failed"), string.Join(" | ", partials));
+            Check("committed text is final once", finals.Count == 1 && finals[0] == "Tell me about a time you failed?", string.Join(" | ", finals));
+            Check("errors reported", status == "ElevenLabs: Invalid API key", status);
+        }
+
         private static void TestGrokLive()
         {
             // With a bad key this proves the WebSocket handshake reaches xAI and the error is readable;
@@ -362,18 +450,15 @@ namespace TheCloser
         private static void TestApi()
         {
             var s = AppSettings.Load();
-            var key = s.EffectiveAnthropicKey;
-            if (string.IsNullOrEmpty(key)) { Note("skipped: no API key configured"); return; }
-            var client = new ClaudeClient();
+            var key = s.EffectiveOpenRouterKey;
+            if (string.IsNullOrEmpty(key)) { Note("skipped: no OpenRouter key configured"); return; }
             var sw = Stopwatch.StartNew();
             var text = new StringBuilder();
-            var model = ModelCatalog.IsAnthropic(s.Model) ? ModelCatalog.AnthropicApiId(s.Model) : "claude-haiku-4-5";
-            var body = PromptBuilder.ForAnthropic(MakeRequest(s, "[Them] Thanks for joining.\n[Them] So, why are you interested in this role?", AnswerKind.Auto, null, null), model);
-            var r = client.StreamAsync(key, body, t => text.Append(t), CancellationToken.None).GetAwaiter().GetResult();
-            Note(string.Format("model {0}, stop {1}, first token {2:0.00}s, total {3:0.00}s, in {4} / out {5} tokens, cache read {6}",
-                r.Model, r.StopReason, r.FirstTokenSeconds, sw.Elapsed.TotalSeconds, r.InputTokens, r.OutputTokens, r.CacheReadTokens));
+            var body = PromptBuilder.ForOpenRouter(MakeRequest(s, "[Them] Thanks for joining.\n[Them] So, why are you interested in this role?", AnswerKind.Auto, null, null), s.Model);
+            var r = OpenRouterClient.StreamAsync(key, body, t => text.Append(t), CancellationToken.None).GetAwaiter().GetResult();
+            Note(string.Format("model {0}, stop {1}, first token {2:0.00}s, total {3:0.00}s", r.Model, r.StopReason, r.FirstTokenSeconds, sw.Elapsed.TotalSeconds));
             Note("answer: " + text.ToString().Replace("\n", " / "));
-            Check("got an answer", text.Length > 20 && r.StopReason == "end_turn", r.StopReason);
+            Check("got an answer", text.Length > 20, r.StopReason);
 
             // The question gate (small model) on lines that should and shouldn't be answered.
             Func<string, bool, GateVerdict> gate = (transcript, mine) =>

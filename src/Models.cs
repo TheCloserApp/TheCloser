@@ -20,26 +20,27 @@ namespace TheCloser
         }
     }
 
-    /// <summary>Where a request goes: straight to Anthropic, or through OpenRouter.</summary>
+    /// <summary>Where a request goes: the subscription, or OpenRouter with your key.</summary>
     internal sealed class ModelRoute
     {
-        public string Provider;   // "anthropic" | "openrouter" | null when no key is available
+        public string Provider;   // "subscription" | "openrouter" | null when no key is available
         public string ApiModel;
         public string Key;
         public string Missing;    // what to tell the user when Provider is null
     }
 
-    /// <summary>
-    /// The model picker. Claude models go directly to the Claude API when an Anthropic key is set (prompt caching,
-    /// native PDFs); everything else - and Claude without an Anthropic key - goes through OpenRouter.
-    /// </summary>
+    /// <summary>The model picker: every model runs through OpenRouter (or the subscription), the same list as the Mac app.</summary>
     internal static class ModelCatalog
     {
+        public const string DefaultModel = "anthropic/claude-sonnet-5";
+
         public static readonly ModelInfo[] Curated =
         {
-            new ModelInfo("anthropic/claude-opus-5", "Claude Opus 5"),
             new ModelInfo("anthropic/claude-sonnet-5", "Claude Sonnet 5"),
+            new ModelInfo("anthropic/claude-opus-5.5", "Claude Opus 5.5"),
+            new ModelInfo("anthropic/claude-fable-5.1", "Claude Fable 5.1"),
             new ModelInfo("anthropic/claude-haiku-4.5", "Claude Haiku 4.5"),
+            new ModelInfo("openai/gpt-5.5", "GPT-5.5"),
             new ModelInfo("openai/gpt-5.4-mini", "GPT-5.4 mini"),
             new ModelInfo("google/gemini-3.8-flash", "Gemini 3.8 Flash"),
             new ModelInfo("google/gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite"),
@@ -87,27 +88,16 @@ namespace TheCloser
             return tail;
         }
 
-        public static bool IsAnthropic(string slug)
-        {
-            return (slug ?? "").StartsWith("anthropic/");
-        }
-
-        /// <summary>"anthropic/claude-haiku-4.5" -> "claude-haiku-4-5" (Claude API model id).</summary>
-        public static string AnthropicApiId(string slug)
-        {
-            return slug.Substring("anthropic/".Length).Replace('.', '-');
-        }
-
         /// <summary>
-        /// Bare Claude API ids ("claude-haiku-4-5", saved by older versions or typed by hand) -> "anthropic/claude-haiku-4.5",
-        /// so they route to the Anthropic key instead of asking for an OpenRouter one.
+        /// Bare Claude API ids ("claude-haiku-4-5", saved by older versions or typed by hand) -> the OpenRouter id
+        /// "anthropic/claude-haiku-4.5".
         /// </summary>
         public static string NormalizeSlug(string slug)
         {
             slug = (slug ?? "").Trim();
             if (!slug.StartsWith("claude-", StringComparison.OrdinalIgnoreCase)) return slug;
             var id = slug.ToLowerInvariant();
-            var known = Curated.FirstOrDefault(m => IsAnthropic(m.Slug) && AnthropicApiId(m.Slug) == id);
+            var known = Curated.FirstOrDefault(m => m.Slug.StartsWith("anthropic/") && m.Slug.Substring(10).Replace('.', '-') == id);
             return known != null ? known.Slug : "anthropic/" + id;
         }
 
@@ -123,14 +113,7 @@ namespace TheCloser
                 }
                 else r.Missing = SubscriptionClient.HasActivePass(s)
                     ? "Choose a model included in your subscription."
-                    : "Open Settings > Subscription to activate or refresh your plan.";
-                return r;
-            }
-            if (IsAnthropic(slug) && s.EffectiveAnthropicKey.Length > 0)
-            {
-                r.Provider = "anthropic";
-                r.ApiModel = AnthropicApiId(slug);
-                r.Key = s.EffectiveAnthropicKey;
+                    : "Open Settings > AI to activate or refresh your plan.";
                 return r;
             }
             if (s.EffectiveOpenRouterKey.Length > 0)
@@ -140,9 +123,7 @@ namespace TheCloser
                 r.Key = s.EffectiveOpenRouterKey;
                 return r;
             }
-            r.Missing = IsAnthropic(slug)
-                ? "Add your Anthropic or OpenRouter key to start. Click to open API keys."
-                : "Add your OpenRouter key to use " + Name(slug) + ". Click to open API keys.";
+            r.Missing = "Add your OpenRouter key to start. Click to open API keys.";
             return r;
         }
 
@@ -177,19 +158,15 @@ namespace TheCloser
     /// <summary>Streams an answer from whichever provider the selected model routes to.</summary>
     internal static class AnswerEngine
     {
-        private static readonly ClaudeClient Claude = new ClaudeClient();
-
         public static Task<StreamResult> StreamAsync(AppSettings s, AnswerRequest req, Action<string> onText, CancellationToken ct, SubscriptionClient billing = null)
         {
             if (s.UseSubscription)
             {
-                if (billing == null) throw new SubscriptionException("subscription_unavailable", "Open Settings > Subscription to refresh your plan.");
+                if (billing == null) throw new SubscriptionException("subscription_unavailable", "Open Settings > AI to refresh your plan.");
                 return billing.StreamAsync(PromptBuilder.ForOpenRouter(req, s.Model), onText, ct);
             }
             var route = ModelCatalog.Resolve(s, s.Model);
-            if (route.Provider == null) throw new ClaudeApiException(401, "missing_key", route.Missing.Replace(" Click to open API keys.", ""));
-            if (route.Provider == "anthropic")
-                return Claude.StreamAsync(route.Key, PromptBuilder.ForAnthropic(req, route.ApiModel), onText, ct);
+            if (route.Provider == null) throw new ApiException(401, "missing_key", route.Missing.Replace(" Click to open API keys.", ""));
             return OpenRouterClient.StreamAsync(route.Key, PromptBuilder.ForOpenRouter(req, route.ApiModel), onText, ct);
         }
     }

@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 
 namespace TheCloser.Ui
@@ -127,36 +129,93 @@ namespace TheCloser.Ui
     }
 
     /// <summary>Saved sessions: open to review or continue, delete.</summary>
+    /// <summary>History: "Interview" with a count, a search box and your saved interviews - like the Mac's.</summary>
     internal sealed class HistoryView : Grid
     {
         private readonly OverlayWindow W;
-        private readonly StackPanel _list = new StackPanel { Margin = new Thickness(24, 20, 24, 24) };
+        private readonly StackPanel _header = new StackPanel { Margin = new Thickness(24, 20, 24, 0) };
+        private readonly StackPanel _list = new StackPanel { Margin = new Thickness(24, 8, 24, 24) };
+        private readonly TextBox _search;
+        private string _query = "";
 
         public HistoryView(OverlayWindow w)
         {
             W = w;
-            Children.Add(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _list });
+            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            RowDefinitions.Add(new RowDefinition());
+            _search = U.Input("Search sessions…", "", false);
+            _search.Padding = new Thickness(40, 8, 14, 8);
+            _search.VerticalContentAlignment = VerticalAlignment.Center;
+            _search.TextChanged += delegate { _query = _search.Text.Trim(); FillList(); };
+            Children.Add(_header);
+            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _list };
+            SetRow(scroll, 1);
+            Children.Add(scroll);
         }
 
         public void Refresh()
         {
-            _list.Children.Clear();
-            var h = U.T("History", 18, U.Text, FontWeights.SemiBold);
-            h.Margin = new Thickness(0, 0, 0, 12);
-            _list.Children.Add(h);
+            _header.Children.Clear();
             var sessions = SessionStore.All();
+            var title = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
+            title.Children.Add(U.T("Interview", 19, U.Text, FontWeights.SemiBold));
+            title.Children.Add(U.Badge(sessions.Count.ToString()));
+            _header.Children.Add(title);
+            var chip = new Border
+            {
+                Background = U.B(0xFF1F1F1F),
+                BorderBrush = U.B(0xFF3A3A3A),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(16),
+                Padding = new Thickness(12, 5, 14, 6),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Child = U.IconText(U.Icon(U.GPerson, 13, U.Text), "Interview", 7)
+            };
+            TextElement.SetForeground(chip, U.Text);
+            TextElement.SetFontSize(chip, 14);
+            TextElement.SetFontWeight(chip, FontWeights.SemiBold);
+            _header.Children.Add(chip);
+            var searchHost = new Grid { Margin = new Thickness(0, 12, 0, 6) };
+            searchHost.Children.Add(_search);
+            var glass = U.Icon(U.GSearch, 14, U.Text2);
+            glass.HorizontalAlignment = HorizontalAlignment.Left;
+            glass.Margin = new Thickness(15, 0, 0, 0);
+            glass.IsHitTestVisible = false;
+            searchHost.Children.Add(glass);
+            _header.Children.Add(searchHost);
+            FillList();
+        }
+
+        private void FillList()
+        {
+            _list.Children.Clear();
+            var sessions = SessionStore.All()
+                .Where(s => _query.Length == 0 || s.Title.IndexOf(_query, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            s.Qas.Any(q => (q.Question ?? "").IndexOf(_query, StringComparison.OrdinalIgnoreCase) >= 0))
+                .ToList();
             if (sessions.Count == 0)
             {
-                var empty = U.T("No saved sessions yet. Every call is saved here automatically.", 14.5, U.Text2);
-                _list.Children.Add(U.Box(empty, new Thickness(22, 18, 22, 18)));
+                var empty = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 90, 0, 0) };
+                var icon = U.Icon(U.GPerson, 30, U.Text3);
+                empty.Children.Add(icon);
+                var t = U.T(_query.Length > 0 ? "No matches" : "No interviews yet", 16.5, U.Text2, FontWeights.SemiBold);
+                t.HorizontalAlignment = HorizontalAlignment.Center;
+                t.Margin = new Thickness(0, 12, 0, 6);
+                empty.Children.Add(t);
+                if (_query.Length == 0)
+                {
+                    var sub = U.T("Start one from the Interview tab — it'll land here when you're done.", 14, U.Text3);
+                    sub.TextAlignment = TextAlignment.Center;
+                    sub.MaxWidth = 340;
+                    empty.Children.Add(sub);
+                }
+                _list.Children.Add(empty);
                 return;
             }
-            var box = new StackPanel();
-            for (int i = 0; i < sessions.Count; i++)
+            foreach (var session in sessions)
             {
-                var s = sessions[i];
-                if (i > 0) box.Children.Add(U.Divider(new Thickness(0, 4, 0, 4)));
-                var row = new Grid { Background = System.Windows.Media.Brushes.Transparent, Cursor = Cursors.Hand };
+                var s = session;
+                var row = new Grid { Background = System.Windows.Media.Brushes.Transparent, Cursor = Cursors.Hand, Margin = new Thickness(0, 2, 0, 2) };
                 row.ColumnDefinitions.Add(new ColumnDefinition());
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 var info = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
@@ -170,9 +229,9 @@ namespace TheCloser.Ui
                 del.VerticalAlignment = VerticalAlignment.Center;
                 Grid.SetColumn(del, 1);
                 row.Children.Add(del);
-                box.Children.Add(row);
+                _list.Children.Add(row);
+                _list.Children.Add(U.Divider(new Thickness(0, 2, 0, 2)));
             }
-            _list.Children.Add(U.Box(box, new Thickness(20, 8, 12, 8)));
         }
     }
 }

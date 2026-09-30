@@ -25,13 +25,13 @@ namespace TheCloser
 
                 billing.ApplyPass(Pass());
                 check(billing.IsActive && billing.Plan == "pro", "paid response activates subscription");
+                check(!billing.IsTester, "a subscription pass isn't tester access");
                 check(!Json.Serialize(settings).Contains("test-signed-pass"), "subscription pass is encrypted in persisted JSON");
                 check(settings.Clone().SubscriptionPass == "test-signed-pass", "subscription pass decrypts after a round trip");
                 check(Throws(delegate { billing.ApplyPass(Json.Obj("pass", "bad", "plan", "pro", "expiresAt", 0, "models", new object[] { "x" })); }), "expired pass response is rejected");
                 check(settings.SubscriptionPass == "test-signed-pass", "incomplete response cannot replace a valid pass");
 
                 settings.UseSubscription = true;
-                settings.AnthropicKey = "test-anthropic-key";
                 settings.OpenRouterKey = "test-openrouter-key";
                 check(ModelCatalog.Resolve(settings, "anthropic/claude-haiku-4.5").Provider == "subscription", "subscription answers ignore stored provider keys");
                 check(ModelCatalog.Resolve(settings, "anthropic/not-in-plan").Provider == null, "plan model allowlist blocks unavailable model");
@@ -93,8 +93,32 @@ namespace TheCloser
                 billing.RefreshAsync().GetAwaiter().GetResult();
                 check(!billing.PendingCheckout && settings.CheckoutRequestId == null, "expired checkout clears attempt for the next explicit purchase");
 
+                // Tester code: a wrong one is refused; a right one gives Pro on the test budget.
+                handler.Responses.Enqueue(Reply(403, Json.Obj("error", "invalid_code")));
+                string codeError = null;
+                try { billing.RedeemAsync("WRONG-CODE").GetAwaiter().GetResult(); }
+                catch (SubscriptionException ex) { codeError = ex.Message; }
+                check(codeError == "That code isn't valid.", "a wrong tester code is refused");
+                check(Json.Str(handler.Requests.Last(), "code") == "WRONG-CODE" && Json.Str(handler.Requests.Last(), "device") == billing.DeviceId, "the tester code is sent with the device");
+                var testerPass = (System.Collections.Generic.Dictionary<string, object>)Pass();
+                testerPass["tester"] = true;
                 settings.UseSubscription = false;
-                check(ModelCatalog.Resolve(settings, "anthropic/claude-haiku-4.5").Provider == "anthropic", "own-key mode keeps existing direct routing");
+                handler.Responses.Enqueue(Reply(200, testerPass));
+                billing.RedeemAsync("closer-test").GetAwaiter().GetResult();
+                check(billing.IsActive && billing.IsTester && settings.UseSubscription, "a tester code turns on Pro on the test budget");
+                check(settings.EffectiveTranscription == "ProGrok" && settings.MissingKeys.Count == 0, "Pro needs no keys and transcribes with Grok");
+                handler.Responses.Enqueue(Reply(200, Json.Obj("token", "short-lived-token", "expiresAt", 1900000000, "model", "grok-voice-transcribe-2.0")));
+                check(billing.SttTokenAsync().GetAwaiter().GetResult() == "short-lived-token", "Pro gets a short-lived Grok token");
+                check(handler.Paths.Last() == "/api/stt-token" && handler.Auth.Last() == "Bearer test-signed-pass" && handler.Devices.Last() == billing.DeviceId,
+                    "the token request carries the pass and the device");
+                handler.Responses.Enqueue(Reply(503, Json.Obj("error", "stt_not_configured")));
+                check(billing.SttTokenAsync().GetAwaiter().GetResult() == null, "no xAI on the server: no token, so Pro falls back to on-device");
+                handler.Responses.Enqueue(Reply(402, Json.Obj("error", "no_subscription")));
+                billing.RefreshAsync().GetAwaiter().GetResult();
+                check(!billing.IsActive && !billing.IsTester, "tester access ends when testing does");
+
+                settings.UseSubscription = false;
+                check(ModelCatalog.Resolve(settings, "anthropic/claude-haiku-4.5").Provider == "openrouter", "own-key mode routes through OpenRouter");
                 check(handler.Responses.Count == 0, "all fake server responses were consumed");
             }
             check(SubscriptionClient.SafeStripeUrl("https://billing.stripe.com/p/session/test").StartsWith("https://billing.stripe.com/"), "Stripe portal URL accepted");

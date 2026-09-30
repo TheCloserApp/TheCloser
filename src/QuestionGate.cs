@@ -12,14 +12,12 @@ namespace TheCloser
     }
 
     /// <summary>
-    /// Before an auto-answer, asks a small fast model (Claude Haiku) whether the newest line of the conversation is
+    /// Before an auto-answer, asks a small fast model (Claude Haiku, through OpenRouter) whether the newest line of the conversation is
     /// worth answering - a real question or request - or just greetings, filler, or half a sentence.
     /// </summary>
     internal static class QuestionGate
     {
-        private const string AnthropicModel = "claude-haiku-4-5";
         private const string OpenRouterModel = "anthropic/claude-haiku-4.5";
-        private static readonly ClaudeClient Claude = new ClaudeClient();
 
         private const string Instructions =
             "You are the trigger for a live-conversation copilot. You get the last few lines of a speech-recognition transcript " +
@@ -33,12 +31,10 @@ namespace TheCloser
             "Output exactly one line: either SKIP, or ANSWER: followed by the question rewritten as one clear sentence " +
             "(fix speech-recognition errors, at most 25 words).";
 
-        /// <summary>Which provider and model the check uses, or null when there's no key for either.</summary>
+        /// <summary>Which provider and model the check uses, or null without a subscription or OpenRouter key.</summary>
         public static ModelRoute Route(AppSettings s)
         {
             if (s.UseSubscription) return new ModelRoute { Provider = "subscription", ApiModel = OpenRouterModel };
-            if (s.EffectiveAnthropicKey.Length > 0)
-                return new ModelRoute { Provider = "anthropic", ApiModel = AnthropicModel, Key = s.EffectiveAnthropicKey };
             if (s.EffectiveOpenRouterKey.Length > 0)
                 return new ModelRoute { Provider = "openrouter", ApiModel = OpenRouterModel, Key = s.EffectiveOpenRouterKey };
             return null;
@@ -60,35 +56,22 @@ namespace TheCloser
             using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
                 timeout.CancelAfter(8000);
-                StreamResult r;
-                if (route.Provider == "anthropic")
-                {
-                    var body = Json.Obj(
-                        "model", route.ApiModel,
-                        "max_tokens", 80,
-                        "temperature", 0,
-                        "system", Instructions,
-                        "messages", new List<object> { Json.Obj("role", "user", "content", user) });
-                    r = await Claude.StreamAsync(route.Key, body, delegate { }, timeout.Token).ConfigureAwait(false);
-                }
-                else
-                {
-                    var body = Json.Obj(
-                        "model", route.ApiModel,
-                        "max_tokens", 80,
-                        "temperature", 0,
-                        "messages", new List<object>
-                        {
-                            Json.Obj("role", "system", "content", Instructions),
-                            Json.Obj("role", "user", "content", user)
-                        });
-                    if (route.Provider == "subscription")
+                var body = Json.Obj(
+                    "model", route.ApiModel,
+                    "max_tokens", 80,
+                    "temperature", 0,
+                    "messages", new List<object>
                     {
-                        if (billing == null) throw new SubscriptionException("subscription_unavailable", "Refresh your subscription in Settings.");
-                        r = await billing.StreamAsync(body, delegate { }, timeout.Token).ConfigureAwait(false);
-                    }
-                    else r = await OpenRouterClient.StreamAsync(route.Key, body, delegate { }, timeout.Token).ConfigureAwait(false);
+                        Json.Obj("role", "system", "content", Instructions),
+                        Json.Obj("role", "user", "content", user)
+                    });
+                StreamResult r;
+                if (route.Provider == "subscription")
+                {
+                    if (billing == null) throw new SubscriptionException("subscription_unavailable", "Refresh your subscription in Settings.");
+                    r = await billing.StreamAsync(body, delegate { }, timeout.Token).ConfigureAwait(false);
                 }
+                else r = await OpenRouterClient.StreamAsync(route.Key, body, delegate { }, timeout.Token).ConfigureAwait(false);
                 return Parse(r.Text);
             }
         }

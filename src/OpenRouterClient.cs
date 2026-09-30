@@ -48,7 +48,7 @@ namespace TheCloser
                 }
                 catch (HttpRequestException ex)
                 {
-                    throw new ClaudeApiException(0, "network", "Network error: " + (ex.InnerException != null ? ex.InnerException.Message : ex.Message));
+                    throw new ApiException(0, "network", "Network error: " + (ex.InnerException != null ? ex.InnerException.Message : ex.Message));
                 }
 
                 using (resp)
@@ -78,7 +78,7 @@ namespace TheCloser
 
                                 var error = Json.Get(ev, "error");
                                 if (error != null)
-                                    throw new ClaudeApiException(0, "stream_error", Json.Str(error, "message") ?? "The model returned an error.");
+                                    throw new ApiException(0, "stream_error", Json.Str(error, "message") ?? "The model returned an error.");
 
                                 if (result.Model == null) result.Model = Json.Str(ev, "model");
                                 var choices = Json.Get(ev, "choices") as object[];
@@ -105,7 +105,7 @@ namespace TheCloser
                         catch (IOException)
                         {
                             if (ct.IsCancellationRequested) throw new OperationCanceledException(ct);
-                            throw new ClaudeApiException(0, "network", "Connection interrupted.");
+                            throw new ApiException(0, "network", "Connection interrupted.");
                         }
                         catch (ObjectDisposedException)
                         {
@@ -125,33 +125,33 @@ namespace TheCloser
             try { return o == null ? 0 : Convert.ToInt64(o); } catch { return 0; }
         }
 
-        private static ClaudeApiException ToException(int status, string body)
+        private static ApiException ToException(int status, string body)
         {
             string message = null;
             try { message = Json.Str(Json.Parse(body), "error", "message"); } catch { }
             if (string.IsNullOrEmpty(message)) message = body.Length > 300 ? body.Substring(0, 300) : body;
             switch (status)
             {
-                case 401: return new ClaudeApiException(status, "auth", "Your OpenRouter key was rejected. Check it in Settings > Models.");
-                case 402: return new ClaudeApiException(status, "credits", "Your OpenRouter account is out of credits.");
-                case 404: return new ClaudeApiException(status, "not_found", "OpenRouter doesn't have that model any more - pick another in the Model menu.");
-                case 429: return new ClaudeApiException(status, "rate_limit", "Rate limited by OpenRouter. Wait a moment and try again.");
-                default: return new ClaudeApiException(status, "error", message);
+                case 401: return new ApiException(status, "auth", "Your OpenRouter key was rejected. Check it in Settings > AI.");
+                case 402: return new ApiException(status, "credits", "Your OpenRouter account is out of credits.");
+                case 404: return new ApiException(status, "not_found", "OpenRouter doesn't have that model any more - pick another in the Model menu.");
+                case 429: return new ApiException(status, "rate_limit", "Rate limited by OpenRouter. Wait a moment and try again.");
+                default: return new ApiException(status, "error", message);
             }
         }
 
-        private static ClaudeApiException ToSubscriptionException(int status, string body)
+        private static ApiException ToSubscriptionException(int status, string body)
         {
             string code = null;
             try { code = Json.Str(Json.Parse(body), "error"); } catch { }
             switch (status)
             {
-                case 401: return new ClaudeApiException(status, "subscription_auth", "Your subscription needs to be refreshed. Open Settings > Subscription.");
-                case 402: return new ClaudeApiException(status, "allowance", code == "no_subscription" ? "Your subscription is no longer active. Open Settings > Subscription." : "Your plan's AI allowance is used up. Check usage or manage your plan in Settings > Subscription.");
-                case 403: return new ClaudeApiException(status, "model_not_in_plan", "This model isn't included in your subscription. Choose an included model.");
-                case 413: return new ClaudeApiException(status, "request_too_large", "This request is too large. Remove an attachment or use a smaller screenshot.");
-                case 429: return new ClaudeApiException(status, "rate_limit", "Too many requests. Wait a moment and try again.");
-                default: return new ClaudeApiException(status, "subscription_error", "The subscription AI service couldn't answer. Try again shortly.");
+                case 401: return new ApiException(status, "subscription_auth", "Your subscription needs to be refreshed. Open Settings > AI.");
+                case 402: return new ApiException(status, "allowance", code == "no_subscription" ? "Your subscription is no longer active. Open Settings > AI." : "Your plan's AI allowance is used up. Check usage or manage your plan in Settings > AI.");
+                case 403: return new ApiException(status, "model_not_in_plan", "This model isn't included in your subscription. Choose an included model.");
+                case 413: return new ApiException(status, "request_too_large", "This request is too large. Remove an attachment or use a smaller screenshot.");
+                case 429: return new ApiException(status, "rate_limit", "Too many requests. Wait a moment and try again.");
+                default: return new ApiException(status, "subscription_error", "The subscription AI service couldn't answer. Try again shortly.");
             }
         }
 

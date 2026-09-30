@@ -18,7 +18,7 @@ namespace TheCloser
     }
 
     /// <summary>
-    /// Languages you can lock transcription to (the "Language" picker). Whisper takes the code as a hard constraint.
+    /// Languages you can lock transcription to (the "Language" picker). ElevenLabs takes the code as a hint.
     /// xAI Grok transcribes whatever it hears (its language parameter only formats numbers and currency), so the
     /// session also drops transcript text written in a script the chosen language doesn't use - Telugu or Devanagari
     /// text while English is picked, say. Indian languages also allow Latin, since they're routinely mixed with English.

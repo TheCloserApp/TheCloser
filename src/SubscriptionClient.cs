@@ -23,6 +23,9 @@ namespace TheCloser
     internal sealed class SubscriptionClient
     {
         internal const string ApiBase = "https://www.thecloser.tech/api/";
+
+        /// <summary>Subscribe buttons in the app. Off shows the plans as "coming soon" (the tester code still works).</summary>
+        public const bool PurchaseEnabled = true;
         private static readonly HttpClient DefaultHttp = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(30) };
         private readonly AppSettings S;
         private readonly HttpClient Http;
@@ -39,12 +42,15 @@ namespace TheCloser
         public double AllowanceUSD { get { return S.SubscriptionAllowanceUSD; } }
         public double UsedUSD { get; private set; }
         public double RemainingUSD { get; private set; }
+        public double UsedFraction { get; private set; }
         public DateTime PeriodEnd { get; private set; }
         public bool Renews { get; private set; }
         public bool HasUsage { get; private set; }
         public bool PendingCheckout { get { return !string.IsNullOrEmpty(S.CheckoutRequestId) || !string.IsNullOrEmpty(S.CheckoutSessionId); } }
         public List<string> Models { get { return new List<string>(S.SubscriptionModels ?? new List<string>()); } }
         public bool IsActive { get { return HasActivePass(S); } }
+        /// <summary>Pro through a tester code rather than a subscription: billing doesn't apply.</summary>
+        public bool IsTester { get { return IsActive && S.SubscriptionTester; } }
         public bool CanManageBilling { get { return !string.IsNullOrEmpty(S.SubscriptionPass); } }
 
         public SubscriptionClient(AppSettings settings) : this(settings, DefaultHttp, true) { }
@@ -113,6 +119,7 @@ namespace TheCloser
                     // Keep the previous pass for server-side recovery and portal access, but never use it for AI.
                     S.SubscriptionExpiresAt = 0;
                     S.SubscriptionModels = new List<string>();
+                    S.SubscriptionTester = false;
                     HasUsage = false;
                     Save();
                 }
@@ -145,11 +152,45 @@ namespace TheCloser
             S.SubscriptionExpiresAt = expires;
             S.SubscriptionModels = models;
             S.SubscriptionAllowanceUSD = Number(response, "allowanceUSD");
+            S.SubscriptionTester = object.Equals(Json.Get(response, "tester"), true);
             S.CheckoutSessionId = null;
             S.CheckoutRequestId = null;
             S.CheckoutPlan = null;
             Status = "active";
             Error = null;
+        }
+
+        /// <summary>
+        /// "Have a tester code?": Pro paid from the test budget all testers share, no payment. The server checks the
+        /// code (case, spaces and dashes don't matter) and returns a pass like a subscription's.
+        /// </summary>
+        public async Task RedeemAsync(string code)
+        {
+            code = (code ?? "").Trim();
+            if (code.Length == 0) return;
+            var response = await SendAsync("pass", Json.Obj("device", DeviceId, "code", code), null, CancellationToken.None).ConfigureAwait(false);
+            ApplyPass(response);
+            S.UseSubscription = true;
+            _lastVerified = DateTime.UtcNow;
+            Save();
+            Changed();
+        }
+
+        /// <summary>
+        /// A token for Grok transcription that lasts a few minutes: Pro (subscribers and testers) transcribes the
+        /// interviewer with Grok Transcribe 2 without the app ever holding our xAI key. Null when the server has no xAI
+        /// set up or refuses; Pro then transcribes with Windows Live Captions.
+        /// </summary>
+        public async Task<string> SttTokenAsync()
+        {
+            try
+            {
+                await EnsureActiveAsync(CancellationToken.None).ConfigureAwait(false);
+                var response = await SendAsync("stt-token", Json.Obj(), S.SubscriptionPass, CancellationToken.None).ConfigureAwait(false);
+                var token = Json.Str(response, "token");
+                return string.IsNullOrEmpty(token) ? null : token;
+            }
+            catch (Exception) { return null; }
         }
 
         public async Task<string> CheckoutAsync(string plan)
@@ -212,6 +253,7 @@ namespace TheCloser
             var response = await SendAsync("usage", null, S.SubscriptionPass, CancellationToken.None).ConfigureAwait(false);
             UsedUSD = Number(response, "usedUSD");
             RemainingUSD = Number(response, "remainingUSD");
+            UsedFraction = Math.Max(0, Math.Min(1, Number(response, "usedFraction")));
             S.SubscriptionAllowanceUSD = Number(response, "allowanceUSD");
             long end;
             PeriodEnd = long.TryParse(Json.Str(response, "periodEnd"), out end) ? FromUnix(end) : DateTime.MinValue;
@@ -254,13 +296,20 @@ namespace TheCloser
             return currency + " " + amount + (count == 1 ? " / month" : " / " + count + " months");
         }
 
+        /// <summary>"Cancel" on "Finish checkout in your browser": stops waiting for this checkout.</summary>
+        public void StopWaitingForCheckout()
+        {
+            ClearCheckout();
+            Changed();
+        }
+
         private async Task EnsureActiveAsync(CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
             if (!IsActive || ExpiresAt < DateTime.UtcNow.AddMinutes(5) || _lastVerified < DateTime.UtcNow.AddMinutes(-5))
                 await RefreshCoreAsync(false, ct).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
-            if (!IsActive) throw new SubscriptionException(Status, Error ?? "Open Settings > Subscription to activate your plan.");
+            if (!IsActive) throw new SubscriptionException(Status, Error ?? "Open Settings > AI to activate your plan.");
         }
 
         public async Task<StreamResult> StreamAsync(Dictionary<string, object> body, Action<string> onText, CancellationToken ct)
@@ -272,7 +321,7 @@ namespace TheCloser
             {
                 return await OpenRouterClient.StreamManagedAsync(S.SubscriptionPass, DeviceId, body, onText, ct, Http).ConfigureAwait(false);
             }
-            catch (ClaudeApiException ex)
+            catch (ApiException ex)
             {
                 if (ex.Status != 401) throw;
             }
@@ -329,6 +378,9 @@ namespace TheCloser
                 case "price_missing": return "This plan isn't available for purchase yet. Try again later.";
                 case "checkout_expired": return "This Stripe checkout has expired. Choose a plan to start a new checkout.";
                 case "bad_checkout_session": return "The checkout session couldn't be verified for this Windows account.";
+                case "invalid_code": return "That code isn't valid.";
+                case "tester_budget_not_set": return "The code couldn't be checked right now. Try again in a moment.";
+                case "tester_access": return "Tester access has no subscription to manage.";
                 default: return "The subscription service couldn't complete this request. Try again shortly.";
             }
         }

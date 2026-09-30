@@ -1,8 +1,8 @@
 # Runs TheCloser's built-in self-tests and prints the results.
 #   .\test.ps1            logic, parsing, rendering (silent, ~2 s)
 #   .\test.ps1 -Audio     also plays a short quiet phrase to check speaker + microphone capture
-#   .\test.ps1 -Api       also sends one real question to Claude using the key saved in Settings
-#   .\test.ps1 -Demo      opens the window filled with sample content (no API calls)
+#   .\test.ps1 -Api       also sends one real question through OpenRouter with the key saved in Settings
+#   .\test.ps1 -Demo      opens the window with a sample interview (no API calls)
 #   .\test.ps1 -CI        skips the Windows 11 Live Captions installation check on CI
 param([switch]$Audio, [switch]$Api, [switch]$Demo, [switch]$CI)
 

@@ -21,7 +21,8 @@ namespace TheCloser.Ui
 {
     /// <summary>
     /// The overlay: three floating panels (title bar, content card, dock) on a transparent, always-on-top window
-    /// that is excluded from screen capture. Hosts the setup, session, settings, browser and history views.
+    /// that is excluded from screen capture. Hosts the welcome tour and the interview setup, live interview,
+    /// settings, browser and history views - the same screens as the Mac app.
     /// </summary>
     internal sealed class OverlayWindow : Window
     {
@@ -32,6 +33,8 @@ namespace TheCloser.Ui
         public readonly SubscriptionClient Billing;
         private readonly bool _forceCapturable;
         internal static bool StealthOn;
+        /// <summary>Drawn to images by `--render`: no tray icon, hotkeys, call detector or billing checks, and closing doesn't quit.</summary>
+        internal static bool Offscreen;
 
         private readonly Grid _root = new Grid();
         private RowDefinition _rowCard, _rowFill;
@@ -49,6 +52,8 @@ namespace TheCloser.Ui
         private SettingsView _settings;
         private BrowserView _browser;
         private HistoryView _history;
+        private OnboardingView _tour;
+        private CallPromptWindow _callPrompt;
         private string _view = "setup";
 
         /// <summary>Everything is drawn at this scale, so text and controls are a notch smaller than their nominal sizes.</summary>
@@ -66,7 +71,7 @@ namespace TheCloser.Ui
 
         // The panel (title bar + card) opens from the dock and closes with the X, leaving just the capsule.
         private bool _panelOpen;
-        private bool _dockHover, _dockExpanded, _moreMenuOpen;
+        private bool _dockHover, _dockExpanded, _dockPinned, _moreMenuOpen;
         private DateTime _dockHoverUntil;
         private bool _topShown = true, _dockShown = true, _gripShown = true;
 
@@ -79,6 +84,8 @@ namespace TheCloser.Ui
         private readonly DispatcherTimer _billingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private DateTime _billingChecked;
         private DateTime _checkoutWatchUntil = DateTime.UtcNow.AddMinutes(10);
+        /// <summary>Waiting for "Upgrade to Pro Max" to be confirmed in the browser.</summary>
+        internal bool WaitingForUpgrade { get; private set; }
         private bool _billingRefreshing, _closed;
         private bool _modalOpen;
         private readonly HashSet<int> _registered = new HashSet<int>();
@@ -88,7 +95,7 @@ namespace TheCloser.Ui
             S = settings;
             _forceCapturable = forceCapturable;
             StealthOn = S.HideFromCapture && !forceCapturable;
-            Billing = new SubscriptionClient(S);
+            Billing = Offscreen ? new SubscriptionClient(S, new System.Net.Http.HttpClient(), false) : new SubscriptionClient(S);
             Ctl = new SessionController(S, Dispatcher, Billing);
 
             Title = "TheCloser";
@@ -113,6 +120,7 @@ namespace TheCloser.Ui
             _settings = new SettingsView(this);
             _browser = new BrowserView(this);
             _history = new HistoryView(this);
+            _tour = new OnboardingView(this);
             Content = _root;
             ApplyBounds();
             ApplyAppearance();
@@ -121,7 +129,7 @@ namespace TheCloser.Ui
             Ctl.QasChanged += OnQasChanged;
             Ctl.TranscriptChanged += () => _session.RefreshTranscript();
             Ctl.Status += OnSessionStatus;
-            Ctl.NeedsKey += () => ShowSettings(S.UseSubscription ? "subscription" : "models");
+            Ctl.NeedsKey += () => ShowSettings("ai");
             Billing.StateChanged += delegate
             {
                 if (_closed || Dispatcher.HasShutdownStarted) return;
@@ -133,20 +141,26 @@ namespace TheCloser.Ui
                         S.Model = Billing.Models[0];
                         SaveSettingsSoon();
                     }
-                    _settings.RefreshSubscription();
+                    if (WaitingForUpgrade && Billing.Plan == "pro_max") WaitingForUpgrade = false;
+                    if (_view == "settings") _settings.Refresh();
+                    if (_view == "tour") _tour.Refresh();
                     OnKeysChanged();
                 });
             };
             _billingTimer.Tick += async delegate
             {
                 if (!S.UseSubscription && !Billing.PendingCheckout) return;
-                var interval = Billing.PendingCheckout && DateTime.UtcNow < _checkoutWatchUntil ? TimeSpan.FromSeconds(15) : TimeSpan.FromMinutes(45);
+                bool waiting = (Billing.PendingCheckout || WaitingForUpgrade) && DateTime.UtcNow < _checkoutWatchUntil;
+                var interval = waiting ? TimeSpan.FromSeconds(15) : TimeSpan.FromMinutes(45);
                 if (DateTime.UtcNow - _billingChecked >= interval) await RefreshBillingAsync();
             };
-            _billingTimer.Start();
-            Loaded += async delegate { if (S.UseSubscription || Billing.PendingCheckout) await RefreshBillingAsync(); };
+            if (!Offscreen)
+            {
+                _billingTimer.Start();
+                Loaded += async delegate { if (S.UseSubscription || Billing.PendingCheckout) await RefreshBillingAsync(); };
+            }
 
-            _tick.Tick += delegate { if (_view == "session") _session.Tick(); UpdateHover(); };
+            _tick.Tick += delegate { if (_view == "session") _session.Tick(); if (!Offscreen) UpdateHover(); };
             _tick.Start();
             _saveTimer.Tick += delegate { _saveTimer.Stop(); S.Save(); };
 
@@ -155,10 +169,14 @@ namespace TheCloser.Ui
             IsVisibleChanged += delegate { UpdateHotkeys(); };
             Closing += delegate { OnClosing(); };
 
-            BuildTray();
-            if (S.OfferOnCall) StartCallDetector();
+            if (!Offscreen)
+            {
+                BuildTray();
+                if (S.OfferOnCall) StartCallDetector();
+            }
             ShowView("setup");
             SetPanel(false); // start as just the capsule; the dock opens the panel
+            if (!S.OnboardingDone && !Offscreen) ShowWelcomeTour();
         }
 
         // =========================================================================================
@@ -184,7 +202,7 @@ namespace TheCloser.Ui
             _root.RowDefinitions.Add(_rowFill);
 
             // Title bar -------------------------------------------------------------------------
-            _topBrush = new SolidColorBrush(U.C(0xFF1B1B1D));
+            _topBrush = new SolidColorBrush(U.C(0xFF111111));
             var topGrid = new Grid();
             topGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             topGrid.ColumnDefinitions.Add(new ColumnDefinition());
@@ -195,9 +213,8 @@ namespace TheCloser.Ui
             Grid.SetColumn(_title, 1);
             topGrid.Children.Add(_title);
             var right = new StackPanel { Orientation = Orientation.Horizontal };
-            _composeBtn = U.Circle(U.GCompose, NewInterviewSetup, "New call  (Ctrl+N)", 14);
-            _moreBtn = U.Btn("Btn.Ghost", U.Icon(U.GMore, 17, U.Blue), ShowMoreMenu, "More");
-            _moreBtn.Padding = new Thickness(10, 8, 10, 8);
+            _composeBtn = U.Circle(U.GCompose, NewInterviewSetup, "New interview setup  (Ctrl+N)", 14);
+            _moreBtn = U.Circle(U.GMore, ShowMoreMenu, "More", 15, U.Text2);
             _moreBtn.Margin = new Thickness(8, 0, 0, 0);
             right.Children.Add(_composeBtn);
             right.Children.Add(_moreBtn);
@@ -206,7 +223,7 @@ namespace TheCloser.Ui
             _top = new Border
             {
                 Background = _topBrush,
-                BorderBrush = U.B(0xFF2A2A2D),
+                BorderBrush = U.B(0xFF262626),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(24),
                 Padding = new Thickness(9, 8, 9, 8),
@@ -218,7 +235,7 @@ namespace TheCloser.Ui
             _root.Children.Add(_top);
 
             // Content card ------------------------------------------------------------------------
-            _cardBrush = new SolidColorBrush(U.C(0xFF161618));
+            _cardBrush = new SolidColorBrush(U.C(0xFF111111));
             _cardGrid.Children.Add(_viewHost);
             _cardGrid.Children.Add(_toasts);
             _cardGrid.Children.Add(_modalLayer);
@@ -226,7 +243,7 @@ namespace TheCloser.Ui
             _card = new Border
             {
                 Background = _cardBrush,
-                BorderBrush = U.B(0xFF28282B),
+                BorderBrush = U.B(0xFF262626),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(21),
                 Child = _cardGrid,
@@ -238,7 +255,7 @@ namespace TheCloser.Ui
             // Dock ------------------------------------------------------------------------------
             // A round capsule with the waveform mark. Hovering slides it open to the nav buttons (or the Ask box
             // during a call); the monitor button opens the panel above it.
-            _dockBrush = new SolidColorBrush(U.C(0xFF141416));
+            _dockBrush = new SolidColorBrush(U.C(0xFF111111));
             var logo = new Border { Width = 46, Height = 46, CornerRadius = new CornerRadius(23), Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = "TheCloser", Child = U.WaveLogo(22, U.Text) };
             logo.MouseLeftButtonDown += delegate(object o, MouseButtonEventArgs e)
             {
@@ -258,13 +275,13 @@ namespace TheCloser.Ui
             _dockMore = new Grid { VerticalAlignment = VerticalAlignment.Center };
             _dockMore.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             _dockMore.ColumnDefinitions.Add(new ColumnDefinition());
-            var sep = new Border { Width = 1, Height = 28, Background = U.B(0xFF303034), Margin = new Thickness(8, 0, 12, 0) };
+            var sep = new Border { Width = 1, Height = 28, Background = U.B(0xFF2A2A2A), Margin = new Thickness(8, 0, 12, 0) };
             _dockMore.Children.Add(sep);
 
             _dockAsk = new Grid();
             _dockAsk.ColumnDefinitions.Add(new ColumnDefinition());
             _dockAsk.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            _ask = new TextBox { Style = U.Style("Text.Input"), Tag = "Ask anything", FontSize = 15, Padding = new Thickness(14, 9, 14, 9), Background = U.B(0xFF0D0D0F), BorderBrush = U.B(0xFF2A2A2E), VerticalAlignment = VerticalAlignment.Center };
+            _ask = new TextBox { Style = U.Style("Text.Input"), Tag = "Ask anything", FontSize = 15, Padding = new Thickness(14, 9, 14, 9), Background = U.B(0xFF0A0A0A), BorderBrush = U.B(0xFF292929), VerticalAlignment = VerticalAlignment.Center };
             _ask.KeyDown += delegate(object o, KeyEventArgs e) { if (e.Key == Key.Enter) { e.Handled = true; SendAsk(); } };
             _ask.TextChanged += delegate { _send.Tag = _ask.Text.Trim().Length > 0 ? "ready" : null; };
             _dockAsk.Children.Add(_ask);
@@ -276,9 +293,9 @@ namespace TheCloser.Ui
             _dockMore.Children.Add(_dockAsk);
 
             _dockNav = new StackPanel { Orientation = Orientation.Horizontal };
-            _navHome = NavButton(U.GMonitor, "Call", "Radio.Dock", () => NavTo("main"));
+            _navHome = NavButton(U.GMonitor, "Interview", "Radio.Dock", () => NavTo("main"));
             _navWeb = NavButton(U.GGlobe, "Browser", "Radio.Dock", () => NavTo("browser"));
-            _navSettings = NavButton(U.GPerson, "Settings", "Radio.DockAccent", () => NavTo("settings"));
+            _navSettings = NavButton(U.GPerson, "Profile", "Radio.Dock", () => NavTo("settings"));
             _navSettings.Margin = new Thickness(0, 0, 2, 0);
             _dockNav.Children.Add(_navHome);
             _dockNav.Children.Add(_navWeb);
@@ -293,7 +310,7 @@ namespace TheCloser.Ui
             _dock = new Border
             {
                 Background = _dockBrush,
-                BorderBrush = U.B(0xFF2C2C30),
+                BorderBrush = U.B(0xFF292929),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(30),
                 Padding = new Thickness(6),
@@ -336,8 +353,8 @@ namespace TheCloser.Ui
                 Width = 32,
                 Height = 32,
                 CornerRadius = new CornerRadius(10),
-                Background = U.B(0xFF1B1B1E),
-                BorderBrush = U.B(0xFF2E2E32),
+                Background = U.B(0xFF1A1A1A),
+                BorderBrush = U.B(0xFF292929),
                 BorderThickness = new Thickness(1),
                 Child = arrows,
                 Cursor = Cursors.SizeNWSE,
@@ -396,6 +413,7 @@ namespace TheCloser.Ui
                 case "settings": el = _settings; break;
                 case "browser": el = _browser; break;
                 case "history": _history.Refresh(); el = _history; break;
+                case "tour": el = _tour; break;
                 default: _setup.Refresh(); el = _setup; break;
             }
             if (_viewHost.Content != el)
@@ -408,12 +426,14 @@ namespace TheCloser.Ui
             if (!_panelOpen) SetPanel(true);
             else RefreshDock();
             UpdateCardLayout();
+            ApplyAppearance();
         }
 
         /// <summary>Opens or closes the panel (title bar + card). Closed, only the dock capsule is left on screen.</summary>
         public void SetPanel(bool open)
         {
             _panelOpen = open;
+            if (!open) _dockPinned = false;
             var vis = open ? Visibility.Visible : Visibility.Collapsed;
             _top.Visibility = vis;
             _card.Visibility = vis;
@@ -427,7 +447,7 @@ namespace TheCloser.Ui
         /// <summary>Dock buttons: open that view, or close the panel if it's already showing.</summary>
         private void NavTo(string target)
         {
-            bool showing = _panelOpen && (target == "main" ? _view == "setup" || _view == "session" || _view == "history" : _view == target);
+            bool showing = _panelOpen && (target == "main" ? _view == "setup" || _view == "session" || _view == "history" || _view == "tour" : _view == target);
             if (showing) SetPanel(false);
             else if (target == "settings") ShowSettings(null);
             else ShowView(target == "main" ? MainView() : target);
@@ -463,6 +483,63 @@ namespace TheCloser.Ui
             _billingChecked = DateTime.MinValue;
         }
 
+        /// <summary>A plan's Subscribe button: Stripe Checkout opens in the browser, and the app switches over once it's paid.</summary>
+        public async void Subscribe(string plan)
+        {
+            S.UseSubscription = true;
+            SaveSettingsSoon();
+            try
+            {
+                OpenUrl(await Billing.CheckoutAsync(plan));
+                WatchCheckout();
+            }
+            catch (Exception ex) { Toast(ex.Message, true); }
+            RefreshBillingViews();
+        }
+
+        /// <summary>"Already subscribed on this PC? Restore": looks the subscription up again.</summary>
+        public async void RestoreSubscription()
+        {
+            S.UseSubscription = true;
+            SaveSettingsSoon();
+            await RefreshBillingAsync();
+            if (!Billing.IsActive) Toast("No subscription was found for this PC.", true);
+            RefreshBillingViews();
+        }
+
+        public void StopWaitingForCheckout()
+        {
+            Billing.StopWaitingForCheckout();
+            WaitingForUpgrade = false;
+            RefreshBillingViews();
+        }
+
+        /// <summary>"Upgrade to Pro Max": Stripe shows the prorated charge; the app switches once it's confirmed.</summary>
+        public async void UpgradeToProMax()
+        {
+            try
+            {
+                OpenUrl(await Billing.UpgradeAsync());
+                WaitingForUpgrade = true;
+                WatchCheckout();
+            }
+            catch (Exception ex) { Toast(ex.Message, true); }
+            RefreshBillingViews();
+        }
+
+        /// <summary>"Manage subscription": Stripe's billing page (plan, card, invoices, cancel).</summary>
+        public async void ManageSubscription()
+        {
+            try { OpenUrl(await Billing.PortalAsync()); }
+            catch (Exception ex) { Toast(ex.Message, true); }
+        }
+
+        private void RefreshBillingViews()
+        {
+            if (_view == "settings") _settings.Refresh();
+            if (_view == "tour") _tour.Refresh();
+        }
+
         private void RefreshTopBar()
         {
             switch (_view)
@@ -471,10 +548,11 @@ namespace TheCloser.Ui
                 case "settings": _title.Text = "Settings"; break;
                 case "browser": _title.Text = "Browser"; break;
                 case "history": _title.Text = "History"; break;
-                default: _title.Text = "New call"; break;
+                case "tour": _title.Text = "Welcome"; break;
+                default: _title.Text = "Interview"; break;
             }
-            // The compose ("new call") button only makes sense on the call screens.
-            _composeBtn.Visibility = _view == "settings" || _view == "browser" ? Visibility.Collapsed : Visibility.Visible;
+            // The compose ("new interview") button only makes sense on the interview screens.
+            _composeBtn.Visibility = _view == "settings" || _view == "browser" || _view == "tour" ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private bool AskMode { get { return _panelOpen && _view == "session"; } }
@@ -488,15 +566,17 @@ namespace TheCloser.Ui
             _navHome.IsChecked = _panelOpen && (_view == "setup" || _view == "session" || _view == "history");
             _navWeb.IsChecked = _panelOpen && _view == "browser";
             _navSettings.IsChecked = _panelOpen && _view == "settings";
+            // Profile turns amber while keys are missing, like the Mac.
+            _navSettings.Style = U.Style(S.MissingKeys.Count > 0 ? "Radio.DockAccent" : "Radio.Dock");
             _dock.HorizontalAlignment = ask ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
             _dockMoreCol.Width = ask ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
             UpdateDockExpansion(true);
         }
 
-        /// <summary>The capsule is just the logo until you hover it (or the panel is open); then the rest slides out.</summary>
+        /// <summary>The capsule is just the logo until you hover or click it (or the panel is open); then the rest slides out.</summary>
         private void UpdateDockExpansion(bool force)
         {
-            bool expand = _panelOpen || _dockHover;
+            bool expand = _panelOpen || _dockHover || _dockPinned;
             if (!force && expand == _dockExpanded) return;
             _dockExpanded = expand;
             if (AskMode)
@@ -524,7 +604,7 @@ namespace TheCloser.Ui
             Native.POINT p;
             if (!Native.GetCursorPos(out p)) return;
             var at = new Point(p.X, p.Y);
-            bool overDock = Over(_dock, at, 6), overTop = Over(_top, at, 8), overGrip = Over(_grip, at, 6);
+            bool overDock = Over(_dock, at, 6), overTop = Over(_top, at, 8), overGrip = Over(_grip, at, 6), overCard = Over(_card, at, 4);
 
             // Short grace period so the capsule doesn't snap shut when the pointer grazes its edge.
             var now = DateTime.UtcNow;
@@ -536,13 +616,13 @@ namespace TheCloser.Ui
                 UpdateDockExpansion(false);
             }
 
-            // During a live call the title bar and the dock stay out of sight until you point at them.
-            bool live = Ctl.Active;
+            // With a screen open, the title bar and the dock stay out of sight until you point at the panel - the
+            // screen shows where TheCloser is. With just the capsule or the bar, they always show (like the Mac).
             bool typing = _ask.IsKeyboardFocusWithin && _ask.Text.Length > 0;
-            bool dockOn = !live || !_panelOpen || hover || typing;
-            SetShown(_top, ref _topShown, !live || overTop || _moreMenuOpen || _modalOpen);
-            SetShown(_dock, ref _dockShown, dockOn);
-            SetShown(_grip, ref _gripShown, dockOn || overGrip);
+            bool chrome = !_panelOpen || hover || overTop || overCard || overGrip || typing || _moreMenuOpen || _modalOpen;
+            SetShown(_top, ref _topShown, chrome);
+            SetShown(_dock, ref _dockShown, chrome);
+            SetShown(_grip, ref _gripShown, chrome);
         }
 
         private static bool Over(FrameworkElement el, Point screen, double pad)
@@ -575,10 +655,16 @@ namespace TheCloser.Ui
         // Actions from the chrome
         // =========================================================================================
 
+        /// <summary>Hovering previews the bar; clicking keeps it open until you click again (which also closes the panel).</summary>
         private void OnLogoClick()
         {
-            if (_panelOpen) SetPanel(false);
-            else ShowView(MainView());
+            if (_panelOpen || _dockPinned)
+            {
+                SetPanel(false);
+                _dockPinned = false;
+            }
+            else _dockPinned = true;
+            UpdateDockExpansion(false);
         }
 
         /// <summary>"Hide window" from the menu: the first time, say how to get it back.</summary>
@@ -616,117 +702,165 @@ namespace TheCloser.Ui
 
         private void ShowMoreMenu()
         {
-            var menu = new ContextMenu();
-            if (Ctl.Current != null)
-            {
-                if (Ctl.Active && !Ctl.Paused) menu.Items.Add(Item("Pause call", delegate { Ctl.Pause(); }));
-                else if (Ctl.Active && Ctl.Paused) menu.Items.Add(Item("Resume call", delegate { Ctl.Resume(); }));
-                if (Ctl.Active) menu.Items.Add(Item("End call", delegate { Ctl.End(); }));
-                else menu.Items.Add(Item("Continue call", ContinueSession));
-                menu.Items.Add(Item("Rename session…", RenameSessionDialog));
-                menu.Items.Add(Item("Export session…", ExportSession));
-                menu.Items.Add(new Separator());
-            }
-
-            // Model (current one shown on the right) and the look of the window - the same controls as in Settings.
-            var model = new MenuItem { Header = "Model", InputGestureText = ModelCatalog.Name(S.Model) };
-            AddModelItems(model, null);
-            menu.Items.Add(model);
-            // What to listen to; switching mid-call reconnects the transcription right away.
-            int audio = Math.Max(0, Array.IndexOf(AudioValues, S.AudioSource));
-            var input = new MenuItem { Header = "Audio input", InputGestureText = AudioLabels[audio] };
-            for (int i = 0; i < AudioValues.Length; i++)
-            {
-                var value = AudioValues[i];
-                var mi = new MenuItem { Header = AudioLabels[i], IsCheckable = true, IsChecked = i == audio };
-                mi.Click += delegate { SetAudioSource(value); };
-                input.Items.Add(mi);
-            }
-            menu.Items.Add(input);
-            menu.Items.Add(new Separator());
-            bool looksChanged = false;
-            menu.Items.Add(MenuSlider("Opacity", 30, 100, S.OpacityPct, n => { S.OpacityPct = n; looksChanged = true; ApplyAppearance(); SaveSettingsSoon(); }));
-            menu.Items.Add(MenuSlider("Background", 20, 100, S.BackgroundPct, n => { S.BackgroundPct = n; looksChanged = true; ApplyAppearance(); SaveSettingsSoon(); }));
-            menu.Items.Add(MenuSlider("Text size", 75, 200, S.TextSizePct, n => { S.TextSizePct = n; looksChanged = true; ApplyAppearance(); SaveSettingsSoon(); }));
-            menu.Items.Add(new Separator());
-
-            var focus = new MenuItem { Header = "Focus mode (latest answer only)", IsCheckable = true, IsChecked = S.FocusMode };
-            focus.Click += delegate { S.FocusMode = focus.IsChecked; SaveSettingsSoon(); _session.RefreshQas(); };
-            menu.Items.Add(focus);
-            var trans = new MenuItem { Header = "Show live transcript", IsCheckable = true, IsChecked = S.ShowTranscript };
-            trans.Click += delegate { SetShowTranscript(trans.IsChecked); };
-            menu.Items.Add(trans);
-            menu.Items.Add(new Separator());
-            menu.Items.Add(Item("History", delegate { ShowView("history"); }));
-            menu.Items.Add(Item("Browser", delegate { ShowView("browser"); }));
-            menu.Items.Add(Item("Settings", delegate { ShowSettings(null); }));
-            menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Replay welcome tour", ShowWelcomeTour));
-            menu.Items.Add(Item("Hide window", HideWithHint));
-            menu.Items.Add(Item("Quit TheCloser", delegate { Close(); }));
-            menu.Opened += delegate { _moreMenuOpen = true; };
-            menu.Closed += delegate
-            {
-                _moreMenuOpen = false;
-                if (looksChanged && _view == "settings") _settings.Refresh(); // its sliders show the old values
-            };
+            var menu = BuildMoreMenu();
             menu.PlacementTarget = _moreBtn;
             menu.Placement = PlacementMode.Bottom;
             menu.IsOpen = true;
         }
 
-        private static MenuItem Item(string header, Action click)
+        /// <summary>The ... menu: the same items, in the same order, as the Mac app's.</summary>
+        internal ContextMenu BuildMoreMenu()
+        {
+            var menu = new ContextMenu();
+            bool live = Ctl.Active;
+            if (live)
+            {
+                menu.Items.Add(Ctl.Paused ? Item("Resume interview", delegate { Ctl.Resume(); }) : Item("Pause interview", delegate { Ctl.Pause(); }));
+                menu.Items.Add(Item("End session", delegate { Ctl.End(); }));
+                menu.Items.Add(new Separator());
+            }
+
+            // Same switch as on the setup screen; it applies straight away, mid-interview included.
+            menu.Items.Add(Choices("Auto-generate responses: " + (S.AutoGenerate ? "On" : "Off"), new[] { "On", "Off" }, S.AutoGenerate ? "On" : "Off",
+                v => SetAutoGenerate(v == "On")));
+            var model = new MenuItem { Header = "Model: " + ModelCatalog.Name(S.Model) };
+            AddModelItems(model, null);
+            menu.Items.Add(model);
+            menu.Items.Add(new Separator());
+
+            menu.Items.Add(Item("New interview setup", NewInterviewSetup, "Ctrl+N"));
+            menu.Items.Add(Item("History", delegate { ShowView("history"); }));
+            if (Ctl.Current != null) menu.Items.Add(Item("Rename…", RenameSessionDialog));
+            menu.Items.Add(new Separator());
+
+            if (Ctl.Current != null)
+            {
+                var export = new MenuItem { Header = "Export" };
+                export.Items.Add(Item("Copy as Markdown", CopySessionMarkdown));
+                export.Items.Add(Item("Save as Markdown…", ExportSession));
+                menu.Items.Add(export);
+            }
+            int audio = Math.Max(0, Array.IndexOf(AudioValues, S.AudioSource));
+            menu.Items.Add(Choices("Audio source: " + AudioLabels[audio], AudioLabels, AudioLabels[audio],
+                v => SetAudioSource(AudioValues[Array.IndexOf(AudioLabels, v)])));
+            menu.Items.Add(Percents("Transparency", new[] { 100, 85, 70, 55, 40 }, S.OpacityPct, n => { S.OpacityPct = n; ApplyAppearance(); SaveSettingsSoon(); }));
+            menu.Items.Add(Percents("Background", new[] { 100, 80, 60, 40, 20 }, S.BackgroundPct, n => { S.BackgroundPct = n; ApplyAppearance(); SaveSettingsSoon(); }));
+            menu.Items.Add(Percents("Text size", new[] { 90, 100, 115, 130, 150 }, S.TextSizePct, n => { S.TextSizePct = n; ApplyAppearance(); SaveSettingsSoon(); }));
+            var keywords = new MenuItem { Header = "Keywords: " + KeywordStyles.Name(S.KeywordStyle) };
+            AddKeywordItems(keywords, null);
+            menu.Items.Add(keywords);
+            // Pro always transcribes on this PC, so there's nothing to pick.
+            if (!Billing.IsActive)
+            {
+                var engine = new MenuItem { Header = "Transcription: " + EngineShortName(S.EffectiveTranscription) };
+                AddEngineItems(engine, null);
+                menu.Items.Add(engine);
+            }
+
+            if (live)
+            {
+                menu.Items.Add(new Separator());
+                var trans = new MenuItem { Header = "Show live transcript", IsCheckable = true, IsChecked = S.ShowTranscript };
+                trans.Click += delegate { SetShowTranscript(trans.IsChecked); };
+                menu.Items.Add(trans);
+                var focus = new MenuItem { Header = "Focus mode (current Q&A only)", IsCheckable = true, IsChecked = S.FocusMode };
+                focus.Click += delegate { S.FocusMode = focus.IsChecked; SaveSettingsSoon(); _session.RefreshQas(); };
+                menu.Items.Add(focus);
+            }
+
+            if (Ctl.Current != null)
+            {
+                menu.Items.Add(new Separator());
+                menu.Items.Add(Item("Delete Session", delegate { ConfirmDeleteSession(Ctl.Current, null); }));
+            }
+
+            // App-level controls: the tray icon is out of reach during a full-screen call, so these live here too.
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item("Reset overlay position", ResetPosition));
+            menu.Items.Add(Item("Close to tray", HideWithHint));
+            menu.Items.Add(Item("Quit TheCloser", delegate { Close(); }));
+            menu.Opened += delegate { _moreMenuOpen = true; };
+            menu.Closed += delegate
+            {
+                _moreMenuOpen = false;
+                if (_view == "settings") _settings.Refresh(); // its controls show the old values
+            };
+            return menu;
+        }
+
+        internal Button MoreButton { get { return _moreBtn; } }
+
+        /// <summary>Takes the current screen out of the panel, to draw it at full length (`--render`).</summary>
+        internal FrameworkElement DetachView()
+        {
+            var el = _viewHost.Content as FrameworkElement;
+            _viewHost.Content = null;
+            return el;
+        }
+
+        /// <summary>Slides the capsule open as if hovered (`--render`).</summary>
+        internal void PreviewDockHover()
+        {
+            _dockHover = true;
+            UpdateDockExpansion(true);
+        }
+
+        internal static MenuItem Item(string header, Action click, string gesture = null)
         {
             var mi = new MenuItem { Header = header };
+            if (gesture != null) mi.InputGestureText = gesture;
             mi.Click += delegate { click(); };
             return mi;
         }
 
-        /// <summary>A menu row with a label, a slider and the value, e.g. "Opacity ——o—— 90%". The menu stays open while you drag.</summary>
-        private static MenuItem MenuSlider(string label, int min, int max, int value, Action<int> changed)
+        /// <summary>A submenu of choices with the current one ticked, e.g. "Audio source: Both > Mic / System / Both".</summary>
+        private static MenuItem Choices(string header, string[] options, string current, Action<string> pick)
         {
-            var g = new Grid { MinWidth = 270 };
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(92) });
-            g.ColumnDefinitions.Add(new ColumnDefinition());
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(50) });
-            g.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
-            var sl = new Slider { Style = U.Style("Slider.Mini"), Minimum = min, Maximum = max, Value = value, SmallChange = 5, LargeChange = 10, TickFrequency = 5, IsSnapToTickEnabled = true, VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(sl, 1);
-            g.Children.Add(sl);
-            var v = new TextBlock { Text = value + "%", FontFamily = U.Mono, FontSize = 13, Foreground = U.Text2, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(v, 2);
-            g.Children.Add(v);
-            sl.ValueChanged += delegate
+            var parent = new MenuItem { Header = header };
+            foreach (var o in options)
             {
-                int n = (int)Math.Round(sl.Value);
-                v.Text = n + "%";
-                changed(n);
-            };
-            return new MenuItem { Style = U.Style("Menu.Slider"), Header = g };
+                var option = o;
+                var mi = new MenuItem { Header = option, IsCheckable = true, IsChecked = option == current };
+                mi.Click += delegate { pick(option); };
+                parent.Items.Add(mi);
+            }
+            return parent;
+        }
+
+        /// <summary>"Transparency: 85% > 100% / 85% / 70% …" (the Mac's presets; Settings has the sliders).</summary>
+        private static MenuItem Percents(string label, int[] levels, int current, Action<int> pick)
+        {
+            var parent = new MenuItem { Header = label + ": " + current + "%" };
+            foreach (var l in levels)
+            {
+                var level = l;
+                var mi = new MenuItem { Header = level + "%", IsCheckable = true, IsChecked = level == current };
+                mi.Click += delegate { pick(level); };
+                parent.Items.Add(mi);
+            }
+            return parent;
         }
 
         // =========================================================================================
-        // Model and language pickers (the ... menu, the setup screen and Settings share these)
+        // Pickers (the ... menu, the setup screen and Settings share these)
         // =========================================================================================
 
-        /// <summary>Adds the enabled models to a menu, the current one ticked, then "Manage models…".</summary>
+        /// <summary>Adds the enabled models to a menu under their provider, the current one ticked.</summary>
         private void AddModelItems(ItemsControl parent, Action picked)
         {
-            foreach (var slug in S.UseSubscription ? Billing.Models : S.EnabledModels)
+            var slugs = S.UseSubscription && Billing.IsActive ? Billing.Models : S.EnabledModels;
+            foreach (var group in slugs.GroupBy(m => ModelCatalog.Group(m)))
             {
-                var m = slug;
-                var mi = new MenuItem
+                if (parent.Items.Count > 0) parent.Items.Add(new Separator());
+                parent.Items.Add(new MenuItem { Header = group.Key, IsEnabled = false, FontSize = 12.5 });
+                foreach (var slug in group)
                 {
-                    Header = ModelCatalog.Name(m),
-                    IsCheckable = true,
-                    IsChecked = m == S.Model,
-                    InputGestureText = ModelCatalog.Resolve(S, m).Provider == null ? (S.UseSubscription ? "check subscription" : "needs a key") : ""
-                };
-                mi.Click += delegate { SetModel(m); if (picked != null) picked(); };
-                parent.Items.Add(mi);
+                    var m = slug;
+                    var mi = new MenuItem { Header = ModelCatalog.Name(m), IsCheckable = true, IsChecked = m == S.Model };
+                    mi.Click += delegate { SetModel(m); if (picked != null) picked(); };
+                    parent.Items.Add(mi);
+                }
             }
-            parent.Items.Add(new Separator());
-            parent.Items.Add(Item(S.UseSubscription ? "Subscription and models…" : "Manage models…", delegate { ShowSettings(S.UseSubscription ? "subscription" : "models"); }));
         }
 
         public void SetModel(string slug)
@@ -734,12 +868,18 @@ namespace TheCloser.Ui
             S.Model = slug;
             SaveSettingsSoon();
             OnKeysChanged();
-            var route = ModelCatalog.Resolve(S, slug);
-            if (route.Provider == null) Toast(route.Missing.Replace(" Click to open API keys.", ""), true);
-            else Toast("Answers now use " + ModelCatalog.Name(slug) + ".", false);
+            Toast("Answers now use " + ModelCatalog.Name(slug) + ".", false);
         }
 
-        /// <summary>Locks transcription to one language ("" = detect). Takes effect right away, even mid-call.</summary>
+        public void SetAutoGenerate(bool on)
+        {
+            if (S.AutoGenerate == on) return;
+            S.AutoGenerate = on;
+            SaveSettingsSoon();
+            _setup.Refresh();
+        }
+
+        /// <summary>Locks transcription to one language ("" = detect). Takes effect right away, even mid-interview.</summary>
         public void SetSpeechLanguage(string code)
         {
             code = code ?? "";
@@ -748,44 +888,97 @@ namespace TheCloser.Ui
             SaveSettingsSoon();
             Ctl.RestartSource();
             _setup.Refresh();
-            Toast(code.Length == 0 ? "Transcribing any language." : "Transcribing " + SpeechLanguages.Name(code) + " only.", false);
         }
 
-        private static readonly string[] AudioLabels = { "Both", "System audio", "Microphone" };
-        private static readonly string[] AudioValues = { "Both", "System", "Mic" };
+        // The Mac's labels.
+        private static readonly string[] AudioLabels = { "Mic", "System", "Both" };
+        private static readonly string[] AudioValues = { "Mic", "System", "Both" };
 
-        /// <summary>What to listen to: Both (them + you), System audio (what the PC plays) or Microphone. Applies right away.</summary>
+        /// <summary>What to listen to: your microphone, what the PC plays, or both. Applies right away.</summary>
         public void SetAudioSource(string value)
         {
             if (S.AudioSource == value) return;
             S.AudioSource = value;
             SaveSettingsSoon();
             Ctl.RestartSource();
-            _setup.Refresh();
         }
 
-        /// <summary>Both / System audio / Microphone chips; `changed` runs after a pick (e.g. to update a hint).</summary>
-        public FrameworkElement AudioSourcePicker(Action changed = null)
+        private static readonly string[] EngineIds = { "Automatic", "LiveCaptions", "ElevenLabs", "Grok" };
+        private static readonly string[] EngineNames = { "Automatic", "Windows (on-device, free)", "ElevenLabs (cloud)", "Grok Transcribe 2 (cloud)" };
+
+        private static string EngineShortName(string engine)
         {
-            int current = Math.Max(0, Array.IndexOf(AudioValues, S.AudioSource));
-            return U.Segmented(AudioLabels, AudioLabels[current], label =>
-            {
-                SetAudioSource(AudioValues[Array.IndexOf(AudioLabels, label)]);
-                if (changed != null) changed();
-            });
+            return engine == "LiveCaptions" ? "Windows" : engine;
         }
 
-        /// <summary>Pill showing the current model; opens the model menu.</summary>
-        public Button ModelPicker()
+        private void AddEngineItems(ItemsControl parent, Action picked)
+        {
+            for (int i = 0; i < EngineIds.Length; i++)
+            {
+                var id = EngineIds[i];
+                var mi = new MenuItem { Header = EngineNames[i], IsCheckable = true, IsChecked = S.Transcription == id };
+                mi.Click += delegate { SetEngine(id); if (picked != null) picked(); };
+                parent.Items.Add(mi);
+            }
+        }
+
+        /// <summary>Switches the transcription engine; mid-interview the new one takes over at once.</summary>
+        public void SetEngine(string id)
+        {
+            if (S.Transcription == id) return;
+            S.Transcription = id;
+            SaveSettingsSoon();
+            Ctl.RestartSource();
+            OnKeysChanged();
+        }
+
+        /// <summary>Pill showing the transcription engine; opens the list (Settings > General).</summary>
+        public Button EnginePicker(Action changed)
         {
             Button b = null;
-            b = U.Btn("Btn.Pill", null, delegate
+            b = U.Btn("Btn.Pill", PickerLabel(null, EngineNames[Math.Max(0, Array.IndexOf(EngineIds, S.Transcription))]), delegate
             {
                 var menu = new ContextMenu();
-                AddModelItems(menu, delegate { b.Content = PickerLabel(U.Sparkle(15, null), ModelCatalog.Name(S.Model)); });
+                AddEngineItems(menu, changed);
                 OpenBelow(menu, b);
-            }, "Model used for answers");
-            b.Content = PickerLabel(U.Sparkle(15, null), ModelCatalog.Name(S.Model));
+            }, "Transcription engine");
+            return b;
+        }
+
+        private void AddKeywordItems(ItemsControl parent, Action picked)
+        {
+            bool highlights = false;
+            foreach (var id in KeywordStyles.Ids)
+            {
+                var style = id;
+                if (KeywordStyles.IsHighlight(style) && !highlights) { parent.Items.Add(new Separator()); highlights = true; }
+                var mi = new MenuItem { Header = KeywordStyles.Name(style), IsCheckable = true, IsChecked = S.KeywordStyle == style };
+                mi.Click += delegate { SetKeywordStyle(style); if (picked != null) picked(); };
+                parent.Items.Add(mi);
+            }
+        }
+
+        public void SetKeywordStyle(string id)
+        {
+            S.KeywordStyle = id;
+            SaveSettingsSoon();
+            _session.OnSettingsChanged();
+        }
+
+        /// <summary>Pill showing the keyword style; opens the styles (Settings > General > Keywords).</summary>
+        public Button KeywordPicker(Action changed)
+        {
+            Button b = null;
+            b = U.Btn("Btn.Pill", PickerLabel(null, KeywordStyles.Name(S.KeywordStyle)), delegate
+            {
+                var menu = new ContextMenu();
+                AddKeywordItems(menu, delegate
+                {
+                    b.Content = PickerLabel(null, KeywordStyles.Name(S.KeywordStyle));
+                    if (changed != null) changed();
+                });
+                OpenBelow(menu, b);
+            }, "How keywords in answers stand out");
             return b;
         }
 
@@ -810,21 +1003,65 @@ namespace TheCloser.Ui
                     menu.Items.Add(mi);
                 }
                 OpenBelow(menu, b);
-            }, "Language of the call");
+            }, "Language of the interview");
             b.Content = PickerLabel(U.Icon(U.GGlobe, 15, null), SpeechLanguages.Name(S.SpeechLanguage));
             return b;
         }
 
-        private static StackPanel PickerLabel(FrameworkElement icon, string text)
+        /// <summary>A key field with a show/hide eye, saved as you type.</summary>
+        public FrameworkElement KeyField(string placeholder, string value, Action<string> save)
         {
-            var sp = U.IconText(icon, text);
+            var g = new Grid();
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            PasswordBox box;
+            var hidden = U.SecretField(placeholder, value, out box);
+            var shown = U.Input(placeholder, value, false);
+            shown.FontFamily = U.Mono;
+            shown.FontSize = 14;
+            shown.Padding = new Thickness(12, 9, 12, 9);
+            shown.Visibility = Visibility.Collapsed;
+            g.Children.Add(hidden);
+            g.Children.Add(shown);
+            bool syncing = false;
+            Action<string> changed = delegate(string v)
+            {
+                if (syncing) return;
+                syncing = true;
+                if (box.Password != v) box.Password = v;
+                if (shown.Text != v) shown.Text = v;
+                syncing = false;
+                save(v.Trim());
+                SaveSettingsSoon();
+                OnKeysChanged();
+            };
+            box.PasswordChanged += delegate { changed(box.Password); };
+            shown.TextChanged += delegate { changed(shown.Text); };
+            Button eye = null;
+            eye = U.Btn("Btn.Ghost", U.Icon(U.GView, 15, null), delegate
+            {
+                bool reveal = shown.Visibility != Visibility.Visible;
+                shown.Visibility = reveal ? Visibility.Visible : Visibility.Collapsed;
+                hidden.Visibility = reveal ? Visibility.Collapsed : Visibility.Visible;
+                eye.Content = reveal ? U.EyeSlash(15, null) : (FrameworkElement)U.Icon(U.GView, 15, null);
+            }, "Show or hide the key");
+            eye.Margin = new Thickness(8, 0, 0, 0);
+            Grid.SetColumn(eye, 1);
+            g.Children.Add(eye);
+            return g;
+        }
+
+        internal static StackPanel PickerLabel(FrameworkElement icon, string text)
+        {
+            var sp = icon != null ? U.IconText(icon, text) : new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            if (icon == null) sp.Children.Add(new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) });
             var chevron = U.Icon(U.GDown, 10, U.Text2);
             chevron.Margin = new Thickness(10, 1, 0, 0);
             sp.Children.Add(chevron);
             return sp;
         }
 
-        private static void OpenBelow(ContextMenu menu, UIElement target)
+        internal static void OpenBelow(ContextMenu menu, UIElement target)
         {
             menu.PlacementTarget = target;
             menu.Placement = PlacementMode.Bottom;
@@ -838,7 +1075,7 @@ namespace TheCloser.Ui
         public async void StartInterview(Session previous)
         {
             if (S.UseSubscription && !Billing.IsActive) await RefreshBillingAsync();
-            if (ModelCatalog.Resolve(S, S.Model).Provider == null) { ShowSettings(S.UseSubscription ? "subscription" : "models"); return; }
+            if (S.MissingKeys.Count > 0 || ModelCatalog.Resolve(S, S.Model).Provider == null) { ShowSettings("ai"); return; }
             var session = previous ?? new Session { PromptId = S.PromptId };
             _reviewing = false;
             Ctl.Begin(session);
@@ -858,30 +1095,6 @@ namespace TheCloser.Ui
             Ctl.Open(session);
             _reviewing = true;
             ShowView("session");
-        }
-
-        public void PickPreviousSession(SetupView setup)
-        {
-            var sessions = SessionStore.All();
-            var list = new StackPanel();
-            if (sessions.Count == 0)
-                list.Children.Add(U.T("No saved sessions yet. Every call is saved automatically once it has content.", 14.5, U.Text2));
-            foreach (var s in sessions)
-            {
-                var sess = s;
-                var info = new StackPanel();
-                info.Children.Add(new TextBlock { Text = sess.Title, FontSize = 15, FontWeight = FontWeights.SemiBold, Foreground = U.Text, TextTrimming = TextTrimming.CharacterEllipsis });
-                var meta = sess.Updated.ToString("ddd, MMM d · h:mm tt") + "  ·  " + sess.Qas.Count + (sess.Qas.Count == 1 ? " answer" : " answers");
-                info.Children.Add(new TextBlock { Text = meta, FontSize = 12.5, Foreground = U.Text3, Margin = new Thickness(0, 2, 0, 0) });
-                var b = U.Btn("Btn.Ghost", info, delegate { setup.SetPrevious(sess); CloseModal(); }, "Use this session");
-                b.HorizontalContentAlignment = HorizontalAlignment.Left;
-                b.HorizontalAlignment = HorizontalAlignment.Stretch;
-                b.Margin = new Thickness(0, 0, 0, 4);
-                list.Children.Add(b);
-            }
-            var scroll = new ScrollViewer { MaxHeight = 320, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = list };
-            var cancel = U.Btn("Btn.Pill", "Cancel", CloseModal);
-            ShowModal(ModalShell("Continue a previous session", scroll, cancel));
         }
 
         public void ConfirmDeleteSession(Session s, Action onDone)
@@ -931,6 +1144,17 @@ namespace TheCloser.Ui
             catch (Exception ex) { Toast("Export failed: " + ex.Message, true); }
         }
 
+        private void CopySessionMarkdown()
+        {
+            if (Ctl.Current == null) return;
+            try
+            {
+                Clipboard.SetText(Ctl.Current.ToMarkdown());
+                Toast("Copied as Markdown.", false);
+            }
+            catch (Exception ex) { Toast("Couldn't copy: " + ex.Message, true); }
+        }
+
         /// <summary>Opens a URL in the user's default browser.</summary>
         public static void OpenUrl(string url)
         {
@@ -952,7 +1176,7 @@ namespace TheCloser.Ui
 
         private void AnswerNow()
         {
-            if (Ctl.Current == null) { ShowWindow(); Toast("Start a call first, then I can answer.", true); return; }
+            if (Ctl.Current == null) { ShowWindow(); Toast("Start an interview first, then I can answer.", true); return; }
             ShowView("session");
             Ctl.Answer(AnswerKind.Manual, null, null);
         }
@@ -989,10 +1213,12 @@ namespace TheCloser.Ui
         {
             _setup.Refresh();
             _session.RefreshState();
+            RefreshDock();
         }
 
         public void SaveSettingsSoon()
         {
+            if (Offscreen) return;
             _saveTimer.Stop();
             _saveTimer.Start();
         }
@@ -1007,7 +1233,7 @@ namespace TheCloser.Ui
             bool isNew = duplicate || prompt == null || string.IsNullOrEmpty(prompt.Id);
             bool builtIn = !isNew && Prompts.IsBuiltIn(prompt.Id);
             var name = U.Input("Prompt name", prompt != null ? prompt.Name : "", false);
-            var instr = U.Input("Describe how TheCloser should respond during the call…", prompt != null ? prompt.Text : "", true);
+            var instr = U.Input("Describe how TheCloser should answer during the interview…", prompt != null ? prompt.Text : "", true);
             instr.Height = 200;
             var body = new StackPanel();
             body.Children.Add(Label2("Name"));
@@ -1015,7 +1241,7 @@ namespace TheCloser.Ui
             body.Children.Add(Label2("Instructions"));
             body.Children.Add(instr);
             var cancel = U.Btn("Btn.Pill", "Cancel", CloseModal);
-            var save = U.Btn("Btn.White", "Save prompt", delegate
+            var save = U.Btn("Btn.White", isNew ? "Save and use" : "Save prompt", delegate
             {
                 var nm = name.Text.Trim();
                 var tx = instr.Text.Trim();
@@ -1063,59 +1289,85 @@ namespace TheCloser.Ui
         /// <summary>Deletes a prompt (built-ins can be brought back from Settings > Prompts), then refreshes both screens.</summary>
         public void DeletePrompt(PromptDef prompt)
         {
-            if (!Prompts.Delete(S, prompt.Id)) { Toast("Keep at least one prompt.", true); return; }
+            Prompts.Delete(S, prompt.Id);
             SaveSettingsSoon();
             RefreshSetup();
             if (_view == "settings") _settings.Refresh();
             Toast("Deleted “" + prompt.Name + "”." + (Prompts.IsBuiltIn(prompt.Id) ? " Restore it from Settings > Prompts." : ""), false);
         }
 
-        public void AddModelById(Action onAdded)
-        {
-            var input = U.Input("e.g. anthropic/claude-sonnet-5", "", false);
-            input.Margin = new Thickness(0, 12, 0, 0);
-            var body = new StackPanel();
-            body.Children.Add(U.T("Paste an OpenRouter model ID. It's added to your model menu and selected.", 14, U.Text2));
-            body.Children.Add(input);
-            var cancel = U.Btn("Btn.Pill", "Cancel", CloseModal);
-            var add = U.Btn("Btn.White", "Add model", delegate
-            {
-                var slug = ModelCatalog.NormalizeSlug(input.Text);
-                if (slug.Length == 0) return;
-                if (!S.EnabledModels.Contains(slug)) S.EnabledModels.Add(slug);
-                S.Model = slug;
-                SaveSettingsSoon();
-                CloseModal();
-                OnKeysChanged();
-                if (onAdded != null) onAdded();
-            });
-            ShowModal(ModalShell("Add a model", body, cancel, add));
-        }
-
+        /// <summary>The welcome tour, in the panel (first run, and Settings > General > Replay welcome tour).</summary>
         public void ShowWelcomeTour()
         {
-            var body = new StackPanel();
-            body.Children.Add(Bullet2("Choose your AI plan", "Open Settings > Subscription for Pro, or add your own provider keys in Models."));
-            body.Children.Add(Bullet2("Set up your call", "Attach a reference file and notes, pick a prompt, then press Start."));
-            body.Children.Add(Bullet2("Answers as you talk", "When the other person asks something, an answer streams into the card a second later."));
-            body.Children.Add(Bullet2("Analyze the screen", "Press Ctrl+Shift+Enter to send a screenshot — a coding problem, a quiz, a slide."));
-            body.Children.Add(Bullet2("Private by default", "The window is hidden from screen shares and recordings. Toggle it with the eye button."));
-            var got = U.Btn("Btn.White", "Get started", delegate { S.OnboardingDone = true; SaveSettingsSoon(); CloseModal(); });
-            ShowModal(ModalShell("Welcome to TheCloser", body, got));
+            _tour.Go(OnboardingView.Step.Welcome);
+            ShowView("tour");
+        }
+
+        /// <summary>A step of the tour (`--render`).</summary>
+        internal void ShowTourStep(OnboardingView.Step step)
+        {
+            _tour.Go(step);
+            ShowView("tour");
+        }
+
+        /// <summary>The tour's last button: on to the interview setup.</summary>
+        public void FinishWelcomeTour()
+        {
+            ShowView(MainView());
+        }
+
+        /// <summary>"Have a tester code?": null when it worked, otherwise what went wrong.</summary>
+        public async Task<string> RedeemTesterCodeAsync(string code)
+        {
+            try
+            {
+                await Billing.RedeemAsync(code);
+                try { await Billing.RefreshUsageAsync(); } catch { }
+            }
+            catch (SubscriptionException ex) { return ex.Message; }
+            catch (Exception) { return "Couldn't reach TheCloser. Check your connection and try again."; }
+            SaveSettingsSoon();
+            OnKeysChanged();
+            if (_view == "settings") _settings.Refresh();
+            Toast("Tester access is on. Thanks for testing!", false);
+            return null;
         }
 
         // =========================================================================================
         // Appearance & bounds
         // =========================================================================================
 
+        /// <summary>
+        /// Opacity, and the Background setting - which is for answers shown over a call. Setup, Settings, History and the
+        /// browser are read up close, and text from the window behind showing through them looks broken, so they're solid
+        /// (like the Mac).
+        /// </summary>
         public void ApplyAppearance()
         {
-            Opacity = Math.Max(0.3, S.OpacityPct / 100.0);
-            byte a = (byte)Math.Round(255.0 * Math.Max(20, Math.Min(100, S.BackgroundPct)) / 100.0);
-            SetBgAlpha(_topBrush, 0x1B1B1D, a);
-            SetBgAlpha(_cardBrush, 0x161618, a);
-            SetBgAlpha(_dockBrush, 0x141416, a);
+            Opacity = Math.Max(0.2, S.OpacityPct / 100.0);
+            byte bar = (byte)Math.Round(255.0 * Math.Max(0, Math.Min(100, S.BackgroundPct)) / 100.0);
+            byte surface = _view == "session" ? bar : (byte)255;
+            SetBgAlpha(_topBrush, 0x111111, surface);
+            SetBgAlpha(_cardBrush, 0x111111, surface);
+            SetBgAlpha(_dockBrush, 0x111111, bar);
             if (_session != null) _session.OnSettingsChanged();
+        }
+
+        /// <summary>Answer text size at the Text size setting (100% is the default).</summary>
+        public static double AnswerSize(AppSettings s)
+        {
+            return 18.0 * s.TextSizePct / 100.0;
+        }
+
+        /// <summary>"Reset overlay position": back to the top right, at the default size.</summary>
+        private void ResetPosition()
+        {
+            S.WinLeft = -1;
+            S.WinTop = -1;
+            S.WinWidth = 0;
+            S.WinHeight = 0;
+            ApplyBounds();
+            SaveBounds();
         }
 
         private static void SetBgAlpha(SolidColorBrush brush, int rgb, byte a)
@@ -1210,7 +1462,7 @@ namespace TheCloser.Ui
             }
             return new Border
             {
-                Background = U.B(0xFF161618),
+                Background = U.B(0xFF111111),
                 BorderBrush = U.Border,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(18),
@@ -1229,16 +1481,6 @@ namespace TheCloser.Ui
             var t = U.T(text, 13.5, U.Text2, FontWeights.SemiBold);
             t.Margin = new Thickness(0, 14, 0, 6);
             return t;
-        }
-
-        private static FrameworkElement Bullet2(string title, string desc)
-        {
-            var sp = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
-            sp.Children.Add(U.T(title, 15.5, U.Text, FontWeights.SemiBold));
-            var d = U.T(desc, 13.5, U.Text2);
-            d.Margin = new Thickness(0, 2, 0, 0);
-            sp.Children.Add(d);
-            return sp;
         }
 
         // =========================================================================================
@@ -1313,23 +1555,35 @@ namespace TheCloser.Ui
             _calls.CallStarted += delegate(string app) { Dispatcher.BeginInvoke((Action)delegate { OfferCall(app); }); };
         }
 
+        /// <summary>Settings > General > "Offer to start when a call begins" changed.</summary>
+        public void OnOfferOnCallChanged()
+        {
+            if (Offscreen) return;
+            if (S.OfferOnCall) StartCallDetector();
+            else
+            {
+                if (_calls != null) { _calls.Dispose(); _calls = null; }
+                if (_callPrompt != null) _callPrompt.Hide();
+            }
+        }
+
+        /// <summary>"On a call in Zoom? Start interview": the card in the top-right corner, like the Mac.</summary>
         private void OfferCall(string app)
         {
             if (Ctl.Active || !S.OfferOnCall) return;
             DateTime last;
             if (_callOffered.TryGetValue(app, out last) && (DateTime.UtcNow - last).TotalMinutes < 5) return;
             _callOffered[app] = DateTime.UtcNow;
-            ShowWindow();
-            ShowView("setup");
-            Toast(app + " just started using your microphone. Press Start to have TheCloser listen in.", false);
+            if (_callPrompt == null) _callPrompt = new CallPromptWindow();
+            _callPrompt.ShowFor(app, StartFromCallPrompt);
         }
 
-        private void TrySample()
+        /// <summary>Opens the interview setup and, when the keys are there, starts right away.</summary>
+        private void StartFromCallPrompt()
         {
             ShowWindow();
-            if (Ctl.Current == null) { Ctl.Open(new Session { Title = "Sample" }); _reviewing = true; }
-            ShowView("session");
-            Ctl.Answer(AnswerKind.Ask, "Give me a friendly one-paragraph sample answer, with a short bold headline and two bullet points, so I can see how TheCloser formats responses.", null);
+            if (S.MissingKeys.Count > 0) { ShowView("setup"); return; }
+            StartInterview(null);
         }
 
         // =========================================================================================
@@ -1342,11 +1596,7 @@ namespace TheCloser.Ui
             _tray.DoubleClick += delegate { Dispatcher.Invoke((Action)ShowWindow); };
             var menu = new WinForms.ContextMenuStrip();
             menu.Items.Add("Show / hide  (Ctrl+Alt+Space)", null, delegate { Dispatcher.Invoke((Action)ToggleWindow); });
-            menu.Items.Add("New call", null, delegate { Dispatcher.Invoke((Action)delegate { ShowWindow(); NewInterviewSetup(); }); });
-            menu.Items.Add("Answer now  (Ctrl+Enter)", null, delegate { Dispatcher.Invoke((Action)AnswerNow); });
-            menu.Items.Add("Analyze screen  (Ctrl+Shift+Enter)", null, delegate { Dispatcher.Invoke((Action)CaptureAndAnswer); });
-            menu.Items.Add(new WinForms.ToolStripSeparator());
-            menu.Items.Add("Try a sample question", null, delegate { Dispatcher.Invoke((Action)TrySample); });
+            menu.Items.Add("New interview", null, delegate { Dispatcher.Invoke((Action)delegate { ShowWindow(); NewInterviewSetup(); }); });
             menu.Items.Add("Settings", null, delegate { Dispatcher.Invoke((Action)delegate { ShowWindow(); ShowSettings(null); }); });
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("Quit TheCloser", null, delegate { Dispatcher.Invoke((Action)delegate { Close(); }); });
@@ -1356,6 +1606,24 @@ namespace TheCloser.Ui
         // =========================================================================================
         // Global hotkeys + window messages
         // =========================================================================================
+
+        internal sealed class Shortcut
+        {
+            public readonly string[] Keys;
+            public readonly string Description;
+            public Shortcut(string description, params string[] keys) { Description = description; Keys = keys; }
+        }
+
+        /// <summary>The global shortcuts, as Settings > Shortcuts lists them: the Mac's set, with Ctrl for ⌘.</summary>
+        internal static readonly Shortcut[] Shortcuts =
+        {
+            new Shortcut("Show / hide overlay", "Ctrl", "Alt", "Space"),
+            new Shortcut("Get the answer now (during an interview)", "Ctrl", "Enter"),
+            new Shortcut("Screenshot → send to AI (during an interview)", "Ctrl", "Shift", "Enter"),
+            new Shortcut("Move overlay (while it's showing)", "Ctrl", "Shift", "↑↓←→"),
+            new Shortcut("Resize overlay", "Ctrl", "Alt", "Shift", "↑↓←→"),
+            new Shortcut("New session", "Ctrl", "N")
+        };
 
         private const uint VK_SPACE = 0x20, VK_RETURN = 0x0D, VK_LEFT = 0x25, VK_UP = 0x26, VK_RIGHT = 0x27, VK_DOWN = 0x28;
         private static readonly uint[] Arrows = { VK_LEFT, VK_UP, VK_RIGHT, VK_DOWN };
@@ -1377,7 +1645,7 @@ namespace TheCloser.Ui
 
         private void UpdateHotkeys()
         {
-            if (_hwnd == IntPtr.Zero) return;
+            if (_hwnd == IntPtr.Zero || Offscreen) return;
             Register(HkToggle, Native.MOD_CONTROL | Native.MOD_ALT, VK_SPACE, true);
             if (IsVisible)
             {
@@ -1385,7 +1653,7 @@ namespace TheCloser.Ui
                 Register(HkShot, Native.MOD_CONTROL | Native.MOD_SHIFT, VK_RETURN, true);
                 for (int i = 0; i < 4; i++)
                 {
-                    Register(HkMove + i, Native.MOD_CONTROL | Native.MOD_ALT, Arrows[i], false);
+                    Register(HkMove + i, Native.MOD_CONTROL | Native.MOD_SHIFT, Arrows[i], false);
                     Register(HkSize + i, Native.MOD_CONTROL | Native.MOD_ALT | Native.MOD_SHIFT, Arrows[i], false);
                 }
             }
@@ -1475,24 +1743,22 @@ namespace TheCloser.Ui
         // Demo & external entry points
         // =========================================================================================
 
-        /// <summary>Fills the window with sample content (used by `--demo`), without any keys or listening.</summary>
+        /// <summary>Fills the window with a sample interview (used by `--demo` and `--render`), without any keys or listening.</summary>
         public void LoadDemo()
         {
-            var s = new Session { Title = "Acme Pay — support call", TitleSetByUser = true };
+            var s = new Session { Title = "Backend interview — Acme", TitleSetByUser = true };
             var now = DateTime.Now;
-            s.Lines.Add(new SessionLine { Speaker = "Them", Text = "Hi, I think I was charged twice for my subscription this month.", Time = now });
-            s.Lines.Add(new SessionLine { Speaker = "Me", Text = "I'm sorry about that — let me take a look at your account.", Time = now });
-            s.Lines.Add(new SessionLine { Speaker = "Them", Text = "Can you refund the duplicate and make sure it doesn't happen again?", Time = now });
+            s.Lines.Add(new SessionLine { Speaker = "Them", Text = "Thanks for joining. Tell me about a time you had to scale a system quickly.", Time = now });
             s.Qas.Add(new QaItem
             {
-                Question = "Can you refund the duplicate charge and prevent a repeat?",
+                Question = "Tell me about a time you had to scale a system quickly.",
                 Kind = "Auto",
                 Time = now,
                 Model = S.Model,
-                Answer = "**Yes — I can refund the duplicate charge today.**\n" +
-                         "- I can see two charges on the same date; I'll reverse the extra one now (3–5 business days to land).\n" +
-                         "- I'll switch the account to a single monthly invoice so it can't double-bill again.\n" +
-                         "- Want me to email a confirmation once the refund is submitted?"
+                Answer = "At my last team I scaled our **payments API** from 2k to 20k requests a second in six weeks.\n" +
+                         "- Moved reads to **PostgreSQL read replicas**, cutting p95 latency by **40%**.\n" +
+                         "- Put a **Redis cache** in front of hot keys, which kept database load flat.\n" +
+                         "- Closing point: we hit Black Friday with zero downtime."
             });
             Ctl.Open(s);
             _reviewing = true;
@@ -1516,15 +1782,19 @@ namespace TheCloser.Ui
             _billingTimer.Stop();
             try { if (_calls != null) _calls.Dispose(); } catch { }
             try { Ctl.End(); } catch { }
-            SaveBounds();
-            S.Save();
+            if (!Offscreen)
+            {
+                SaveBounds();
+                S.Save();
+            }
             if (_hwnd != IntPtr.Zero)
                 foreach (var id in _registered.ToList()) Native.UnregisterHotKey(_hwnd, id);
             _registered.Clear();
             _tick.Stop();
             if (_tray != null) { _tray.Visible = false; _tray.Dispose(); _tray = null; }
+            if (_callPrompt != null) { _callPrompt.Close(); _callPrompt = null; }
             var app = Application.Current;
-            if (app != null) app.Shutdown();
+            if (app != null && !Offscreen) app.Shutdown();
         }
 
         private bool _trayHintShown;
