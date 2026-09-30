@@ -37,7 +37,6 @@ namespace TheCloser.Ui
         internal static bool Offscreen;
 
         private readonly Grid _root = new Grid();
-        private RowDefinition _rowCard, _rowFill;
         private Border _top, _card, _dock;
         private SolidColorBrush _topBrush, _cardBrush, _dockBrush;
         private TextBlock _title;
@@ -165,7 +164,6 @@ namespace TheCloser.Ui
             _saveTimer.Tick += delegate { _saveTimer.Stop(); S.Save(); };
 
             PreviewKeyDown += OnPreviewKey;
-            SizeChanged += delegate { UpdateCardLayout(); };
             IsVisibleChanged += delegate { UpdateHotkeys(); };
             Closing += delegate { OnClosing(); };
 
@@ -194,12 +192,9 @@ namespace TheCloser.Ui
             _root.LayoutTransform = new ScaleTransform(UiScale, UiScale);
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
-            _rowCard = new RowDefinition { Height = new GridLength(1, GridUnitType.Star) };
-            _root.RowDefinitions.Add(_rowCard);
+            _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            _rowFill = new RowDefinition { Height = new GridLength(0) };
-            _root.RowDefinitions.Add(_rowFill);
 
             // Title bar -------------------------------------------------------------------------
             _topBrush = new SolidColorBrush(U.C(0xFF111111));
@@ -425,7 +420,6 @@ namespace TheCloser.Ui
             RefreshTopBar();
             if (!_panelOpen) SetPanel(true);
             else RefreshDock();
-            UpdateCardLayout();
             ApplyAppearance();
         }
 
@@ -441,7 +435,6 @@ namespace TheCloser.Ui
             if (open) U.Enter(_card, 12, 200);
             if (!open && _modalOpen) CloseModal();
             RefreshDock();
-            UpdateCardLayout();
         }
 
         /// <summary>Dock buttons: open that view, or close the panel if it's already showing.</summary>
@@ -643,14 +636,6 @@ namespace TheCloser.Ui
             U.Animate(el, OpacityProperty, on ? 1 : 0, on ? 140 : 280);
         }
 
-        /// <summary>Sizes the content card: fills the window normally, hugs its header when the session is collapsed.</summary>
-        public void UpdateCardLayout()
-        {
-            bool collapse = _panelOpen && _view == "session" && _session != null && _session.IsCollapsed;
-            _rowCard.Height = collapse ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
-            _rowFill.Height = collapse ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
-        }
-
         // =========================================================================================
         // Actions from the chrome
         // =========================================================================================
@@ -749,13 +734,9 @@ namespace TheCloser.Ui
             var keywords = new MenuItem { Header = "Keywords: " + KeywordStyles.Name(S.KeywordStyle) };
             AddKeywordItems(keywords, null);
             menu.Items.Add(keywords);
-            // Pro always transcribes on this PC, so there's nothing to pick.
-            if (!Billing.IsActive)
-            {
-                var engine = new MenuItem { Header = "Transcription: " + EngineShortName(S.EffectiveTranscription) };
-                AddEngineItems(engine, null);
-                menu.Items.Add(engine);
-            }
+            var engine = new MenuItem { Header = "Transcription: " + EngineShortName(S.EffectiveTranscription) };
+            AddEngineItems(engine, null);
+            menu.Items.Add(engine);
 
             if (live)
             {
@@ -764,7 +745,7 @@ namespace TheCloser.Ui
                 trans.Click += delegate { SetShowTranscript(trans.IsChecked); };
                 menu.Items.Add(trans);
                 var focus = new MenuItem { Header = "Focus mode (current Q&A only)", IsCheckable = true, IsChecked = S.FocusMode };
-                focus.Click += delegate { S.FocusMode = focus.IsChecked; SaveSettingsSoon(); _session.RefreshQas(); };
+                focus.Click += delegate { SetFocusMode(focus.IsChecked); };
                 menu.Items.Add(focus);
             }
 
@@ -905,19 +886,30 @@ namespace TheCloser.Ui
 
         private static readonly string[] EngineIds = { "Automatic", "LiveCaptions", "ElevenLabs", "Grok" };
         private static readonly string[] EngineNames = { "Automatic", "Windows (on-device, free)", "ElevenLabs (cloud)", "Grok Transcribe 2 (cloud)" };
+        // Pro: both cloud engines are included (TheCloser's keys), or this PC.
+        private static readonly string[] ProEngineIds = { "Grok", "ElevenLabs", "LiveCaptions" };
+        private static readonly string[] ProEngineNames = { "Grok Transcribe 2 (included)", "ElevenLabs (included)", "Windows (on-device, free)" };
 
         private static string EngineShortName(string engine)
         {
+            if (engine == "ProGrok") return "Grok";
+            if (engine == "ProElevenLabs") return "ElevenLabs";
             return engine == "LiveCaptions" ? "Windows" : engine;
         }
 
+        private bool ProEngines { get { return S.UseSubscription && Billing.IsActive; } }
+
         private void AddEngineItems(ItemsControl parent, Action picked)
         {
-            for (int i = 0; i < EngineIds.Length; i++)
+            bool pro = ProEngines;
+            var ids = pro ? ProEngineIds : EngineIds;
+            var names = pro ? ProEngineNames : EngineNames;
+            var current = pro ? S.ProTranscription : S.Transcription;
+            for (int i = 0; i < ids.Length; i++)
             {
-                var id = EngineIds[i];
-                var mi = new MenuItem { Header = EngineNames[i], IsCheckable = true, IsChecked = S.Transcription == id };
-                mi.Click += delegate { SetEngine(id); if (picked != null) picked(); };
+                var id = ids[i];
+                var mi = new MenuItem { Header = names[i], IsCheckable = true, IsChecked = current == id };
+                mi.Click += delegate { if (pro) SetProEngine(id); else SetEngine(id); if (picked != null) picked(); };
                 parent.Items.Add(mi);
             }
         }
@@ -932,11 +924,25 @@ namespace TheCloser.Ui
             OnKeysChanged();
         }
 
+        /// <summary>Pro's pick: Grok or ElevenLabs on TheCloser's account, or Windows on this PC.</summary>
+        public void SetProEngine(string id)
+        {
+            if (S.ProTranscription == id) return;
+            S.ProTranscription = id;
+            SaveSettingsSoon();
+            Ctl.RestartSource();
+            OnKeysChanged();
+        }
+
         /// <summary>Pill showing the transcription engine; opens the list (Settings > General).</summary>
         public Button EnginePicker(Action changed)
         {
+            bool pro = ProEngines;
+            var label = pro
+                ? ProEngineNames[Math.Max(0, Array.IndexOf(ProEngineIds, S.ProTranscription))]
+                : EngineNames[Math.Max(0, Array.IndexOf(EngineIds, S.Transcription))];
             Button b = null;
-            b = U.Btn("Btn.Pill", PickerLabel(null, EngineNames[Math.Max(0, Array.IndexOf(EngineIds, S.Transcription))]), delegate
+            b = U.Btn("Btn.Pill", PickerLabel(null, label), delegate
             {
                 var menu = new ContextMenu();
                 AddEngineItems(menu, changed);
@@ -1078,6 +1084,10 @@ namespace TheCloser.Ui
             if (S.MissingKeys.Count > 0 || ModelCatalog.Resolve(S, S.Model).Provider == null) { ShowSettings("ai"); return; }
             var session = previous ?? new Session { PromptId = S.PromptId };
             _reviewing = false;
+            // Every interview starts like the Mac's: the transcript strip showing, one Q&A at a time.
+            S.ShowTranscript = true;
+            S.FocusMode = true;
+            SaveSettingsSoon();
             Ctl.Begin(session);
             ShowView("session");
         }
@@ -1189,6 +1199,14 @@ namespace TheCloser.Ui
             catch (Exception ex) { ShowWindow(); Toast("Couldn't capture the screen: " + ex.Message, true); return; }
             ShowView("session");
             Ctl.Answer(AnswerKind.Screen, null, shot);
+        }
+
+        /// <summary>One question and answer at a time (with ‹ › to flip back), or the whole conversation.</summary>
+        public void SetFocusMode(bool on)
+        {
+            S.FocusMode = on;
+            SaveSettingsSoon();
+            _session.RefreshQas();
         }
 
         public void SetShowTranscript(bool on)
@@ -1746,9 +1764,26 @@ namespace TheCloser.Ui
         /// <summary>Fills the window with a sample interview (used by `--demo` and `--render`), without any keys or listening.</summary>
         public void LoadDemo()
         {
+            LoadDemo(false);
+        }
+
+        /// <param name="live">Show it as a live interview (paused, never listening or saved) instead of a past one (`--render`).</param>
+        internal void LoadDemo(bool live)
+        {
             var s = new Session { Title = "Backend interview — Acme", TitleSetByUser = true };
             var now = DateTime.Now;
+            s.Lines.Add(new SessionLine { Speaker = "Them", Text = "Can you walk me through how you'd design a rate limiter?", Time = now.AddMinutes(-3) });
+            s.Lines.Add(new SessionLine { Speaker = "Me", Text = "Sure, I'd start with a token bucket per API key.", Time = now.AddMinutes(-2) });
             s.Lines.Add(new SessionLine { Speaker = "Them", Text = "Thanks for joining. Tell me about a time you had to scale a system quickly.", Time = now });
+            s.Qas.Add(new QaItem
+            {
+                Question = "Can you walk me through how you'd design a rate limiter?",
+                Kind = "Auto",
+                Time = now.AddMinutes(-3),
+                Model = S.Model,
+                Answer = "I'd use a **token bucket** per API key, kept in **Redis** so every server shares it.\n" +
+                         "- Refill at the plan's rate; reject with **429** and a Retry-After header when empty."
+            });
             s.Qas.Add(new QaItem
             {
                 Question = "Tell me about a time you had to scale a system quickly.",
@@ -1760,9 +1795,16 @@ namespace TheCloser.Ui
                          "- Put a **Redis cache** in front of hot keys, which kept database load flat.\n" +
                          "- Closing point: we hit Black Friday with zero downtime."
             });
-            Ctl.Open(s);
-            _reviewing = true;
+            if (live) Ctl.PreviewLive(s);
+            else Ctl.Open(s);
+            _reviewing = !live;
             ShowView("session");
+        }
+
+        /// <summary>Opens the full transcript drop-down (`--render`).</summary>
+        internal void PreviewTranscript()
+        {
+            _session.PreviewTranscript();
         }
 
         /// <summary>Shows the window on a specific settings page (used by `--open-settings`).</summary>

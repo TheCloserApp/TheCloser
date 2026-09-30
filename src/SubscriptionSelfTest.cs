@@ -111,8 +111,17 @@ namespace TheCloser
                 check(billing.SttTokenAsync().GetAwaiter().GetResult() == "short-lived-token", "Pro gets a short-lived Grok token");
                 check(handler.Paths.Last() == "/api/stt-token" && handler.Auth.Last() == "Bearer test-signed-pass" && handler.Devices.Last() == billing.DeviceId,
                     "the token request carries the pass and the device");
+                check(Json.Str(handler.Requests.Last(), "provider") == "grok", "Grok is the default provider");
                 handler.Responses.Enqueue(Reply(503, Json.Obj("error", "stt_not_configured")));
                 check(billing.SttTokenAsync().GetAwaiter().GetResult() == null, "no xAI on the server: no token, so Pro falls back to on-device");
+                settings.ProTranscription = "ElevenLabs";
+                check(settings.EffectiveTranscription == "ProElevenLabs", "Pro can pick ElevenLabs");
+                handler.Responses.Enqueue(Reply(200, Json.Obj("token", "single-use-token", "expiresAt", 1900000000, "provider", "elevenlabs")));
+                check(billing.SttTokenAsync("elevenlabs").GetAwaiter().GetResult() == "single-use-token" && Json.Str(handler.Requests.Last(), "provider") == "elevenlabs",
+                    "Pro asks for an ElevenLabs token");
+                settings.ProTranscription = "LiveCaptions";
+                check(settings.EffectiveTranscription == "LiveCaptions" && settings.MissingKeys.Count == 0, "Pro can transcribe on this PC");
+                settings.ProTranscription = "Grok";
                 handler.Responses.Enqueue(Reply(402, Json.Obj("error", "no_subscription")));
                 billing.RefreshAsync().GetAwaiter().GetResult();
                 check(!billing.IsActive && !billing.IsTester, "tester access ends when testing does");

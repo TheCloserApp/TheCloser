@@ -48,7 +48,11 @@ namespace TheCloser.Ui
             Scene("pill", 470, 360, delegate(OverlayWindow w) { w.SetPanel(false); });
             Scene("bar", 470, 360, delegate(OverlayWindow w) { w.SetPanel(false); w.PreviewDockHover(); });
             Scene("setup", 520, 1000, delegate(OverlayWindow w) { w.ShowView("setup"); });
-            Scene("live", 520, 760, delegate(OverlayWindow w) { w.LoadDemo(); });
+            // Live: one Q&A at a time with arrows (the default), every Q&A, and the full transcript opened.
+            Scene("live", 520, 760, delegate(OverlayWindow w) { w.LoadDemo(true); });
+            Scene("live-all", 520, 760, delegate(OverlayWindow w) { w.LoadDemo(true); w.SetFocusMode(false); });
+            Scene("live-transcript", 520, 760, delegate(OverlayWindow w) { w.LoadDemo(true); w.PreviewTranscript(); });
+            Scene("review", 520, 760, delegate(OverlayWindow w) { w.LoadDemo(); });
             Scene("history", 520, 760, delegate(OverlayWindow w) { w.ShowView("history"); });
             foreach (var page in new[] { "general", "ai", "prompts", "memory", "shortcuts" })
             {
@@ -59,7 +63,7 @@ namespace TheCloser.Ui
             PageScene("setup-full", 560, delegate(OverlayWindow w) { w.ShowView("setup"); });
             PageScene("settings-general-full", 600, delegate(OverlayWindow w) { w.ShowSettings("general"); });
             PageScene("settings-ai-full", 600, delegate(OverlayWindow w) { w.ShowSettings("ai"); });
-            MenuScene("menu", delegate(OverlayWindow w) { w.LoadDemo(); });
+            MenuScene("menu", delegate(OverlayWindow w) { w.LoadDemo(true); });
             CallPromptScene();
 
             _log.AppendLine(_failures == 0 ? "ALL SCREENS RENDERED" : _failures + " SCREEN(S) FAILED");

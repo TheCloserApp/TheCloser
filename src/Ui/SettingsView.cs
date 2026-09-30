@@ -201,20 +201,18 @@ namespace TheCloser.Ui
             var rec = new StackPanel();
             rec.Children.Add(SwitchRow("Offer to start when a call begins", "When Zoom, Meet or Teams starts using your mic.", S.OfferOnCall,
                 on => { S.OfferOnCall = on; W.SaveSettingsSoon(); W.OnOfferOnCallChanged(); }));
-            // Pro always transcribes on this PC, so there's nothing to pick.
-            if (!W.Billing.IsActive)
-            {
-                var engine = new Grid { Margin = new Thickness(0, 16, 0, 0) };
-                engine.ColumnDefinitions.Add(new ColumnDefinition());
-                engine.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                engine.Children.Add(TwoLine("Transcription engine", "Windows runs on this PC. ElevenLabs and Grok need a key."));
-                var pick = W.EnginePicker(Refresh);
-                pick.Margin = new Thickness(16, 0, 0, 0);
-                pick.VerticalAlignment = VerticalAlignment.Center;
-                Grid.SetColumn(pick, 1);
-                engine.Children.Add(pick);
-                rec.Children.Add(engine);
-            }
+            var engine = new Grid { Margin = new Thickness(0, 16, 0, 0) };
+            engine.ColumnDefinitions.Add(new ColumnDefinition());
+            engine.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            engine.Children.Add(TwoLine("Transcription engine", S.UseSubscription && W.Billing.IsActive
+                ? "Grok and ElevenLabs are included with Pro. Windows runs on this PC."
+                : "Windows runs on this PC. ElevenLabs and Grok need a key."));
+            var pick = W.EnginePicker(Refresh);
+            pick.Margin = new Thickness(16, 0, 0, 0);
+            pick.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(pick, 1);
+            engine.Children.Add(pick);
+            rec.Children.Add(engine);
             p.Children.Add(Box(rec));
 
             p.Children.Add(H("Privacy"));

@@ -48,13 +48,18 @@ namespace TheCloser
         /// <summary>The provider's name in status messages ("ElevenLabs", "xAI").</summary>
         protected abstract string Provider { get; }
         protected abstract string ApiKey { get; }
-        protected abstract Uri BuildUri();
+        /// <summary>The WebSocket address; `key` is the connection's credential (ElevenLabs' tokens go in it).</summary>
+        protected abstract Uri BuildUri(string key);
         protected abstract void Authorize(ClientWebSocket ws, string key);
+
+        /// <summary>Pro: fetches a short-lived token from TheCloser's server before each connection.</summary>
+        internal Func<Task<string>> TokenProvider;
+        protected bool UsesToken { get { return TokenProvider != null; } }
 
         /// <summary>The credential for the next connection: the API key, or (Pro) a fresh short-lived token.</summary>
         protected virtual Task<string> ConnectKeyAsync()
         {
-            return Task.FromResult(ApiKey);
+            return TokenProvider != null ? TokenProvider() : Task.FromResult(ApiKey);
         }
 
         /// <summary>Pro listens to the interviewer only (one stream), unless you picked the microphone alone.</summary>
@@ -172,7 +177,7 @@ namespace TheCloser
                 using (var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
                 {
                     connectTimeout.CancelAfter(15000);
-                    await ws.ConnectAsync(BuildUri(), connectTimeout.Token).ConfigureAwait(false);
+                    await ws.ConnectAsync(BuildUri(key), connectTimeout.Token).ConfigureAwait(false);
                 }
 
                 var ready = new TaskCompletionSource<bool>();
@@ -302,7 +307,7 @@ namespace TheCloser
                 using (var cts = new CancellationTokenSource(15000))
                 {
                     source.Authorize(ws, source.ApiKey);
-                    await ws.ConnectAsync(source.BuildUri(), cts.Token).ConfigureAwait(false);
+                    await ws.ConnectAsync(source.BuildUri(source.ApiKey), cts.Token).ConfigureAwait(false);
                     var ready = new TaskCompletionSource<bool>();
                     string error = null;
                     source.Status += delegate(string s) { if (error == null) error = s; };
@@ -341,11 +346,17 @@ namespace TheCloser
             return sb.ToString();
         }
 
-        protected override Uri BuildUri() { return new Uri(BuildUrl(_s)); }
+        /// <summary>Your key goes in a header; Pro's single-use token goes in the address, as ElevenLabs asks.</summary>
+        protected override Uri BuildUri(string key)
+        {
+            var url = BuildUrl(_s);
+            if (UsesToken) url += "&token=" + Uri.EscapeDataString(key ?? "");
+            return new Uri(url);
+        }
 
         protected override void Authorize(ClientWebSocket ws, string key)
         {
-            ws.Options.SetRequestHeader("xi-api-key", key);
+            if (!UsesToken) ws.Options.SetRequestHeader("xi-api-key", key);
         }
 
         internal static string AudioMessage(byte[] pcm, bool commit)

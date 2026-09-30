@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -8,45 +9,52 @@ using System.Windows.Shapes;
 
 namespace TheCloser.Ui
 {
-    /// <summary>The live interview card: recording pill + what's being heard, optional transcript, and the answers.</summary>
+    /// <summary>
+    /// The live interview card, as on the Mac:
+    ///   the strip: [● 00:13] what's being heard           [⌄ full transcript] [≡ one Q&amp;A / all] [eye: hide the strip]
+    ///   the full transcript (the ⌄ drop-down): every line with a copy button, and Copy all
+    ///   the answers: one question and answer at a time with ‹ 2/5 › (focus mode), or the whole conversation.
+    /// The strip and focus mode are also in the … menu.
+    /// </summary>
     internal sealed class SessionView : Grid
     {
         private readonly OverlayWindow W;
         private SessionController Ctl { get { return W.Ctl; } }
+        private AppSettings S { get { return W.S; } }
 
+        private readonly Grid _strip;
         private readonly Border _pill;
         private readonly Ellipse _dot;
         private readonly TextBlock _timer, _heard;
-        private readonly Button _collapseBtn, _transcriptBtn, _stealthBtn, _continueBtn;
+        private readonly Button _continueBtn, _transcriptBtn, _focusBtn, _hideBtn;
         private readonly Border _transcriptPanel;
         private readonly StackPanel _transcriptLines = new StackPanel();
         private readonly ScrollViewer _transcriptScroll;
-        private readonly Border _headerLine;
+        private readonly Border _stripLine;
         private readonly Grid _body;
         private readonly FrameworkElement _empty;
         private readonly TextBlock _emptyTitle, _emptySub;
         private readonly ScrollViewer _qaScroll;
         private readonly StackPanel _qaList = new StackPanel { Margin = new Thickness(0, 0, 0, 6) };
         private readonly Dictionary<QaItem, ContentControl> _answerHosts = new Dictionary<QaItem, ContentControl>();
-        private bool _collapsed;
+        private bool _transcriptOpen;
+        private int _focusOffset;          // 0 = the newest question; 1 = the one before, ...
+        private int _renderedQaCount = -1;
         private int _renderedTextSize;
         private string _renderedKeywordStyle;
-
-        public bool IsCollapsed { get { return _collapsed; } }
 
         public SessionView(OverlayWindow w)
         {
             W = w;
-            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // header
+            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // strip
+            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // full transcript (drop-down)
             RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // divider
-            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // transcript
-            RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // body
+            RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // answers
 
-            // Header: [● 00:13] Listening... speak anytime.            [v] [≡] [eye]
-            var header = new Grid { Margin = new Thickness(20, 16, 16, 14) };
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            header.ColumnDefinitions.Add(new ColumnDefinition());
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            _strip = new Grid { Margin = new Thickness(20, 16, 16, 14) };
+            _strip.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            _strip.ColumnDefinitions.Add(new ColumnDefinition());
+            _strip.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             _dot = new Ellipse { Width = 8, Height = 8, Fill = U.Red, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
             _timer = new TextBlock { FontFamily = U.Mono, FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = U.RecText, VerticalAlignment = VerticalAlignment.Center, Text = "00:00" };
@@ -55,7 +63,7 @@ namespace TheCloser.Ui
             pillRow.Children.Add(_timer);
             _pill = new Border { Background = U.RecBg, CornerRadius = new CornerRadius(13), Padding = new Thickness(11, 4, 12, 5), Child = pillRow, VerticalAlignment = VerticalAlignment.Center };
             U.Pulse(_dot);
-            header.Children.Add(_pill);
+            _strip.Children.Add(_pill);
 
             _heard = new TextBlock
             {
@@ -67,43 +75,57 @@ namespace TheCloser.Ui
                 Margin = new Thickness(14, 0, 12, 2)
             };
             Grid.SetColumn(_heard, 1);
-            header.Children.Add(_heard);
+            _strip.Children.Add(_heard);
 
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
             _continueBtn = U.Btn("Btn.White", U.IconText(U.GPlay, "Continue", 8), () => W.ContinueSession());
             _continueBtn.Padding = new Thickness(14, 7, 16, 7);
             _continueBtn.FontSize = 14;
-            _continueBtn.Margin = new Thickness(0, 0, 8, 0);
-            _collapseBtn = U.Circle(U.GDown, ToggleCollapsed, "Collapse", 13);
-            _transcriptBtn = U.Circle(U.GList, () => W.SetShowTranscript(!W.S.ShowTranscript), "Show live transcript", 15);
-            _stealthBtn = U.Circle(U.GView, () => W.ToggleStealth(), "", 15);
-            foreach (var b in new FrameworkElement[] { _continueBtn, _collapseBtn, _transcriptBtn, _stealthBtn })
+            _transcriptBtn = U.Circle(U.GDown, ToggleTranscript, "", 13);
+            _focusBtn = U.Circle(U.GList, () => W.SetFocusMode(!S.FocusMode), "", 14);
+            _hideBtn = U.Btn("Btn.Circle", U.EyeSlash(14, null), () => W.SetShowTranscript(false), "Hide the transcript — bring it back from the … menu");
+            foreach (var b in new FrameworkElement[] { _continueBtn, _transcriptBtn, _focusBtn, _hideBtn })
             {
-                if (b != _continueBtn) b.Margin = new Thickness(8, 0, 0, 0);
+                b.Margin = new Thickness(8, 0, 0, 0);
                 buttons.Children.Add(b);
             }
             Grid.SetColumn(buttons, 2);
-            header.Children.Add(buttons);
-            Children.Add(header);
+            _strip.Children.Add(buttons);
+            Children.Add(_strip);
 
-            _headerLine = new Border { Height = 1, Background = U.Line };
-            SetRow(_headerLine, 1);
-            Children.Add(_headerLine);
-
-            // Live transcript (toggle)
-            _transcriptScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 150, Content = _transcriptLines };
+            // Full transcript: every line, each with a copy button; Copy all in its header.
+            _transcriptScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 240, Content = _transcriptLines };
+            var transcriptHead = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+            transcriptHead.ColumnDefinitions.Add(new ColumnDefinition());
+            transcriptHead.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var title = U.T("Full transcript", 13, U.Text3, FontWeights.SemiBold);
+            title.VerticalAlignment = VerticalAlignment.Center;
+            transcriptHead.Children.Add(title);
+            var copyAll = U.Btn("Btn.Ghost", U.IconText(U.Icon(U.GCopy, 12, null), "Copy all", 6), CopyAll, "Copy the full transcript");
+            copyAll.FontSize = 13;
+            copyAll.Padding = new Thickness(8, 4, 8, 4);
+            Grid.SetColumn(copyAll, 1);
+            transcriptHead.Children.Add(copyAll);
+            var transcriptStack = new StackPanel();
+            transcriptStack.Children.Add(transcriptHead);
+            transcriptStack.Children.Add(_transcriptScroll);
             _transcriptPanel = new Border
             {
                 Background = U.B(0xFF0A0A0A),
                 Padding = new Thickness(20, 10, 14, 10),
-                Child = _transcriptScroll,
+                Child = transcriptStack,
                 BorderBrush = U.Line,
-                BorderThickness = new Thickness(0, 0, 0, 1)
+                BorderThickness = new Thickness(0, 1, 0, 0),
+                Visibility = Visibility.Collapsed
             };
-            SetRow(_transcriptPanel, 2);
+            SetRow(_transcriptPanel, 1);
             Children.Add(_transcriptPanel);
 
-            // Body: empty state or answers
+            _stripLine = new Border { Height = 1, Background = U.Line };
+            SetRow(_stripLine, 2);
+            Children.Add(_stripLine);
+
+            // Answers: empty state, or the Q&A
             _body = new Grid();
             SetRow(_body, 3);
             Children.Add(_body);
@@ -126,27 +148,21 @@ namespace TheCloser.Ui
             _body.Children.Add(_qaScroll);
         }
 
-        private void ToggleCollapsed()
+        /// <summary>Focus mode (one Q&amp;A with arrows) applies during a live interview; a saved one shows everything.</summary>
+        private bool Focused { get { return S.FocusMode && Ctl.Active; } }
+
+        private void ToggleTranscript()
         {
-            _collapsed = !_collapsed;
-            ((TextBlock)_collapseBtn.Content).Text = _collapsed ? U.GUp : U.GDown;
-            _collapseBtn.ToolTip = _collapsed ? "Expand" : "Collapse";
-            RefreshLayout();
+            _transcriptOpen = !_transcriptOpen;
+            if (_transcriptOpen) RefreshTranscript();
+            RefreshState();
+            if (_transcriptOpen) _transcriptScroll.ScrollToEnd();
         }
 
-        private void RefreshLayout()
-        {
-            _body.Visibility = _collapsed ? Visibility.Collapsed : Visibility.Visible;
-            _headerLine.Visibility = _collapsed ? Visibility.Collapsed : Visibility.Visible;
-            _transcriptPanel.Visibility = W.S.ShowTranscript && !_collapsed ? Visibility.Visible : Visibility.Collapsed;
-            W.UpdateCardLayout();
-        }
-
-        /// <summary>Header state: timer, what's being heard, buttons.</summary>
+        /// <summary>Strip state: timer, what's being heard, buttons.</summary>
         public void RefreshState()
         {
             var s = Ctl.Current;
-            bool live = Ctl.Active && !Ctl.Paused;
             if (Ctl.Active)
             {
                 _pill.Background = Ctl.Paused ? U.Chip : U.RecBg;
@@ -159,11 +175,21 @@ namespace TheCloser.Ui
                 _dot.Fill = U.Text3;
                 _timer.Foreground = U.Text2;
             }
+            // The strip hides only during a live interview (the eye); a saved session always shows it, with Continue.
+            bool strip = !Ctl.Active || S.ShowTranscript;
+            _strip.Visibility = strip ? Visibility.Visible : Visibility.Collapsed;
+            _stripLine.Visibility = strip ? Visibility.Visible : Visibility.Collapsed;
+            _transcriptPanel.Visibility = strip && _transcriptOpen ? Visibility.Visible : Visibility.Collapsed;
+
             _continueBtn.Visibility = !Ctl.Active && s != null ? Visibility.Visible : Visibility.Collapsed;
-            _collapseBtn.Visibility = s != null && s.Qas.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            _stealthBtn.Content = W.S.HideFromCapture ? U.EyeSlash(15, null) : (FrameworkElement)U.Icon(U.GView, 15, U.Amber);
-            _stealthBtn.ToolTip = W.S.HideFromCapture ? "Hidden from screen sharing (click to show)" : "Visible to screen sharing (click to hide)";
-            _transcriptBtn.Content = U.Icon(U.GList, 15, W.S.ShowTranscript ? U.Blue : null);
+            bool anything = s != null && (s.Lines.Count > 0 || Ctl.OpenPartials().Count > 0);
+            _transcriptBtn.Visibility = anything || _transcriptOpen ? Visibility.Visible : Visibility.Collapsed;
+            ((TextBlock)_transcriptBtn.Content).Text = _transcriptOpen ? U.GUp : U.GDown;
+            _transcriptBtn.ToolTip = _transcriptOpen ? "Hide the full transcript" : "Show the full transcript — every line, each with a copy button";
+            _focusBtn.Visibility = Ctl.Active ? Visibility.Visible : Visibility.Collapsed;
+            ((TextBlock)_focusBtn.Content).Text = S.FocusMode ? U.GList : U.GCompress;
+            _focusBtn.ToolTip = S.FocusMode ? "Show the full conversation" : "Focus on the current answer";
+            _hideBtn.Visibility = Ctl.Active ? Visibility.Visible : Visibility.Collapsed;
 
             if (!Ctl.Active) _emptyTitle.Text = s == null ? "No session" : "No questions in this session";
             else if (Ctl.Paused) _emptyTitle.Text = "Interview paused";
@@ -171,7 +197,6 @@ namespace TheCloser.Ui
             _emptySub.Text = Ctl.Active && !Ctl.Paused ? "The answer appears here the moment the interviewer finishes asking." :
                 Ctl.Active ? "Resume from the … menu when you're ready." : "Press Continue to pick this interview back up.";
             Tick();
-            RefreshLayout();
         }
 
         /// <summary>Called ~20x a second: timer, live heard text, streaming answer.</summary>
@@ -202,63 +227,133 @@ namespace TheCloser.Ui
             }
         }
 
+        // --- Full transcript ----------------------------------------------------------------------
+
         public void RefreshTranscript()
         {
+            if (!_transcriptOpen) { RefreshState(); return; }
             _transcriptLines.Children.Clear();
             var s = Ctl.Current;
             if (s == null) return;
             bool atBottom = _transcriptScroll.VerticalOffset >= _transcriptScroll.ScrollableHeight - 4;
-            foreach (var l in s.Lines.Skip(Math.Max(0, s.Lines.Count - 60)))
-                _transcriptLines.Children.Add(Line(l.Speaker, l.Text, false));
+            foreach (var l in s.Lines.Skip(Math.Max(0, s.Lines.Count - 200)))
+                _transcriptLines.Children.Add(Line(Label(l.Speaker), l.Text, false));
             foreach (var p in Ctl.OpenPartials())
-                _transcriptLines.Children.Add(Line(p.Key, p.Value, true));
+                _transcriptLines.Children.Add(Line("LIVE", p.Value, true));
             if (_transcriptLines.Children.Count == 0)
                 _transcriptLines.Children.Add(U.T(Ctl.Active ? "Speech will appear here as it's transcribed." : "No transcript.", 13.5, U.Text3));
             if (atBottom) _transcriptScroll.ScrollToEnd();
         }
 
-        private static TextBlock Line(string speaker, string text, bool partial)
+        private static string Label(string speaker)
         {
-            var tb = new TextBlock { FontFamily = U.Font, FontSize = 13.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 2) };
-            var color = speaker == "Me" ? U.Green : speaker == "Them" ? U.B(0xFF7DB4FF) : U.B(0xFFC9A7FF);
-            tb.Inlines.Add(new System.Windows.Documents.Run(speaker + "  ") { Foreground = color, FontWeight = FontWeights.SemiBold });
-            tb.Inlines.Add(new System.Windows.Documents.Run(text) { Foreground = partial ? U.Text3 : U.Text2, FontStyle = partial ? FontStyles.Italic : FontStyles.Normal });
-            return tb;
+            return speaker == "Me" ? "ME" : speaker == "Them" ? "THEM" : "HEARD";
         }
 
-        /// <summary>Rebuilds the Q&A list (new question, focus mode, text size, or a different session).</summary>
+        /// <summary>One transcript line: who, what, and a copy button.</summary>
+        private FrameworkElement Line(string label, string text, bool live)
+        {
+            var g = new Grid { Margin = new Thickness(0, 2, 0, 2) };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var tag = new TextBlock
+            {
+                Text = label,
+                FontFamily = U.Mono,
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Foreground = live ? U.Red : label == "ME" ? U.Green : U.Text3,
+                Margin = new Thickness(0, 3, 0, 0)
+            };
+            g.Children.Add(tag);
+            var body = U.T(text, 14 * S.TextSizePct / 100.0, live ? U.Text3 : U.Text2);
+            if (live) body.FontStyle = FontStyles.Italic;
+            Grid.SetColumn(body, 1);
+            g.Children.Add(body);
+            if (!live)
+            {
+                var copy = U.Btn("Btn.Ghost", U.Icon(U.GCopy, 12, null), () => CopyText(text, "Copied."), "Copy");
+                copy.Padding = new Thickness(6, 3, 6, 3);
+                copy.VerticalAlignment = VerticalAlignment.Top;
+                Grid.SetColumn(copy, 2);
+                g.Children.Add(copy);
+            }
+            return g;
+        }
+
+        private void CopyAll()
+        {
+            var s = Ctl.Current;
+            if (s == null) return;
+            var sb = new StringBuilder();
+            foreach (var l in s.Lines) sb.Append(l.Speaker).Append(": ").Append(l.Text).Append('\n');
+            CopyText(sb.ToString().TrimEnd(), "Transcript copied.");
+        }
+
+        private void CopyText(string text, string toast)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            try { Clipboard.SetText(text); W.Toast(toast, false); }
+            catch (Exception ex) { W.Toast("Couldn't copy: " + ex.Message, true); }
+        }
+
+        // --- Answers ------------------------------------------------------------------------------
+
+        /// <summary>Rebuilds the answers (a new question, focus mode, text size, or a different session).</summary>
         public void RefreshQas()
         {
             var s = Ctl.Current;
             _qaList.Children.Clear();
             _answerHosts.Clear();
-            _renderedTextSize = W.S.TextSizePct;
-            _renderedKeywordStyle = W.S.KeywordStyle;
-            var qas = s == null ? new List<QaItem>() : (W.S.FocusMode ? s.Qas.Skip(Math.Max(0, s.Qas.Count - 1)).ToList() : s.Qas);
-            _empty.Visibility = qas.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            _qaScroll.Visibility = qas.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-            for (int i = 0; i < qas.Count; i++)
+            _renderedTextSize = S.TextSizePct;
+            _renderedKeywordStyle = S.KeywordStyle;
+            var all = s == null ? new List<QaItem>() : s.Qas;
+            // A new question arrived: back to the newest.
+            if (all.Count != _renderedQaCount) _focusOffset = 0;
+            _renderedQaCount = all.Count;
+            _empty.Visibility = all.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            _qaScroll.Visibility = all.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+
+            if (Focused && all.Count > 0)
             {
-                var block = QaBlock(qas[i], i == qas.Count - 1);
-                if (i > 0) _qaList.Children.Add(new Border { Height = 1, Background = U.Line, Margin = new Thickness(24, 6, 24, 6) });
+                _focusOffset = Math.Max(0, Math.Min(_focusOffset, all.Count - 1));
+                var qa = all[all.Count - 1 - _focusOffset];
+                var block = QaBlock(qa, true, all.Count - _focusOffset, all.Count);
                 _qaList.Children.Add(block);
-                if (i == qas.Count - 1 && qas[i].Streaming) U.Enter(block, 8, 200);
+                if (_focusOffset == 0 && qa.Streaming) U.Enter(block, 8, 200);
+            }
+            else
+            {
+                for (int i = 0; i < all.Count; i++)
+                {
+                    var block = QaBlock(all[i], i == all.Count - 1, 0, 0);
+                    if (i > 0) _qaList.Children.Add(new Border { Height = 1, Background = U.Line, Margin = new Thickness(24, 6, 24, 6) });
+                    _qaList.Children.Add(block);
+                    if (i == all.Count - 1 && all[i].Streaming) U.Enter(block, 8, 200);
+                }
             }
             RefreshState();
-            Dispatcher.BeginInvoke((Action)(() => _qaScroll.ScrollToEnd()), System.Windows.Threading.DispatcherPriority.Loaded);
+            if (Focused) _qaScroll.ScrollToTop();
+            else Dispatcher.BeginInvoke((Action)(() => _qaScroll.ScrollToEnd()), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
-        private FrameworkElement QaBlock(QaItem qa, bool last)
+        /// <param name="position">In focus mode, which question this is (1-based) of `total`; 0 outside it.</param>
+        private FrameworkElement QaBlock(QaItem qa, bool last, int position, int total)
         {
             var sp = new StackPanel { Margin = new Thickness(26, 14, 22, last ? 18 : 10) };
-            var q = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
-            var qi = U.Icon("", 14, U.Text3);
-            qi.Margin = new Thickness(0, 1, 10, 0);
+            var q = new Grid { Margin = new Thickness(0, 0, 0, 12) };
+            q.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            q.ColumnDefinitions.Add(new ColumnDefinition());
+            q.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var qi = U.Icon(U.GQuestion, 14, U.Text3);
+            qi.Margin = new Thickness(0, 2, 10, 0);
             qi.VerticalAlignment = VerticalAlignment.Top;
             q.Children.Add(qi);
-            var qt = U.T(qa.Question, 14.5 * W.S.TextSizePct / 100.0, U.Text2);
-            qt.MaxWidth = 900;
+            var qt = U.T(qa.Question, 14.5 * S.TextSizePct / 100.0, U.Text2);
+            Grid.SetColumn(qt, 1);
             q.Children.Add(qt);
+            if (total > 1) q.Children.Add(Arrows(position, total));
             sp.Children.Add(q);
 
             var host = new ContentControl();
@@ -267,24 +362,38 @@ namespace TheCloser.Ui
             sp.Children.Add(host);
 
             var menu = new ContextMenu();
-            var copy = new MenuItem { Header = "Copy answer" };
-            copy.Click += delegate { try { Clipboard.SetText(qa.CurrentText); W.Toast("Answer copied.", false); } catch { } };
-            var copyQ = new MenuItem { Header = "Copy question" };
-            copyQ.Click += delegate { try { Clipboard.SetText(qa.Question); } catch { } };
-            menu.Items.Add(copy);
-            menu.Items.Add(copyQ);
+            menu.Items.Add(OverlayWindow.Item("Copy answer", () => CopyText(qa.CurrentText, "Answer copied.")));
+            menu.Items.Add(OverlayWindow.Item("Copy question", () => CopyText(qa.Question, "Question copied.")));
             sp.ContextMenu = menu;
             sp.Background = Brushes.Transparent;
             return sp;
         }
 
+        /// <summary>‹ 2/5 ›: flip through earlier questions in focus mode.</summary>
+        private FrameworkElement Arrows(int position, int total)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(12, 0, 0, 0) };
+            var prev = U.Circle(U.GLeft, () => { _focusOffset++; RefreshQas(); }, "Previous question", 10);
+            prev.Width = prev.Height = 26;
+            prev.IsEnabled = position > 1;
+            var count = new TextBlock { Text = position + "/" + total, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = U.Text3, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(7, 0, 7, 0) };
+            var next = U.Circle(U.GRight, () => { _focusOffset--; RefreshQas(); }, "Next question", 10);
+            next.Width = next.Height = 26;
+            next.IsEnabled = position < total;
+            row.Children.Add(prev);
+            row.Children.Add(count);
+            row.Children.Add(next);
+            Grid.SetColumn(row, 2);
+            return row;
+        }
+
         private void RenderAnswer(QaItem qa, ContentControl host, bool streamingUpdate)
         {
-            double size = OverlayWindow.AnswerSize(W.S);
+            double size = OverlayWindow.AnswerSize(S);
             var text = qa.CurrentText;
-            bool stick = streamingUpdate && _qaScroll.VerticalOffset >= _qaScroll.ScrollableHeight - 30;
+            bool stick = streamingUpdate && !Focused && _qaScroll.VerticalOffset >= _qaScroll.ScrollableHeight - 30;
             var panel = new StackPanel();
-            if (text.Length > 0) panel.Children.Add(MarkdownView.Render(text, size, W.S.KeywordStyle));
+            if (text.Length > 0) panel.Children.Add(MarkdownView.Render(text, size, S.KeywordStyle));
             if (qa.Streaming && text.Length == 0)
             {
                 var thinking = new StackPanel { Orientation = Orientation.Horizontal };
@@ -317,8 +426,15 @@ namespace TheCloser.Ui
 
         public void OnSettingsChanged()
         {
-            if (_renderedTextSize != W.S.TextSizePct || _renderedKeywordStyle != W.S.KeywordStyle) RefreshQas();
+            if (_renderedTextSize != S.TextSizePct || _renderedKeywordStyle != S.KeywordStyle) RefreshQas();
             RefreshState();
+        }
+
+        /// <summary>Opens the full transcript (`--render`).</summary>
+        internal void PreviewTranscript()
+        {
+            _transcriptOpen = false;
+            ToggleTranscript();
         }
     }
 }
