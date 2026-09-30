@@ -9,7 +9,7 @@ using System.Windows.Threading;
 namespace TheCloser.Ui
 {
     /// <summary>
-    /// Runs a call session: the transcript source, question detection and auto-answers, answer streaming and
+    /// Runs an interview session: the transcript source, question detection and auto-answers, answer streaming and
     /// saving. Everything here runs on the UI dispatcher; the UI subscribes to the events.
     /// </summary>
     internal sealed class SessionController
@@ -102,7 +102,7 @@ namespace TheCloser.Ui
             StopSource();
             SessionStore.Save(Current);
             Raise(StateChanged);
-            Say("Call paused.", false);
+            Say("Interview paused.", false);
         }
 
         public void Resume()
@@ -169,19 +169,11 @@ namespace TheCloser.Ui
             if (_src != null) return;
             ITranscriptSource src;
             var engine = S.EffectiveTranscription;
-            if (engine == "Grok")
-            {
-                if (S.EffectiveXaiKey.Length == 0) { Say("Add your xAI key (Settings > Models) to use Grok transcription.", true); return; }
-                src = new GrokStreamingSource(S.Clone());
-            }
-            else if (engine == "Whisper")
-            {
-                if (S.EffectiveWhisperKey.Length == 0) { Say("Add your OpenAI key (Settings > Models) to use Whisper transcription.", true); return; }
-                src = new CloudSpeechSource(S.Clone());
-            }
+            if (engine == "ElevenLabs") src = new ElevenLabsStreamingSource(S.Clone());
+            else if (engine == "Grok") src = new GrokStreamingSource(S.Clone());
             else
             {
-                if (!LiveCaptionsSource.IsAvailable) { Say("Windows Live Captions isn't available on this PC - add an xAI key for Grok transcription.", true); return; }
+                if (!LiveCaptionsSource.IsAvailable) { Say("Windows Live Captions isn't available on this PC. Add an ElevenLabs key in Settings > AI.", true); return; }
                 src = new LiveCaptionsSource();
             }
             src.Transcript += ev => D.BeginInvoke((Action)(() => OnTranscript(ev)));
@@ -450,10 +442,9 @@ namespace TheCloser.Ui
                 Question = focus,
                 UserText = kind == AnswerKind.Ask || kind == AnswerKind.Screen ? userText : null,
                 ScreenshotJpegBase64 = screenshot,
-                Length = S.Length,
                 Effort = S.Effort
             };
-            foreach (var q in Current.Qas.Where(q => !q.Streaming && q.Error == null).Reverse().Take(3).Reverse()) req.Recent.Add(q);
+            AddMemory(req);
 
             var qa = new QaItem { Question = question, Kind = kind.ToString(), Time = DateTime.Now, Model = S.Model, Live = new StringBuilder() };
             Current.Qas.Add(qa);
@@ -482,6 +473,30 @@ namespace TheCloser.Ui
                     D.BeginInvoke((Action)(() => Fail(qa, ex, cts)));
                 }
             });
+        }
+
+        /// <summary>
+        /// Earlier answers the request replays (Settings > Memory): the last few from this session, or all of them, and
+        /// optionally the latest answer from each of the three most recent other sessions. Same rules as the Mac app.
+        /// </summary>
+        private void AddMemory(AnswerRequest req)
+        {
+            if (!S.ReplayTurns) return;
+            var done = Current.Qas.Where(q => !q.Streaming && q.Error == null).ToList();
+            if (!S.ReplayAllTurns && done.Count > S.ReplayTurnCount)
+            {
+                // Keep the opening exchange: it carries the setup context the whole session leans on.
+                var recent = done.Skip(done.Count - S.ReplayTurnCount).ToList();
+                recent.Insert(0, done[0]);
+                done = recent;
+            }
+            req.Recent.AddRange(done);
+            if (!S.PullPastSessions) return;
+            foreach (var other in SessionStore.All().Where(o => o.Id != Current.Id && o.Qas.Count > 0).Take(3))
+            {
+                var last = other.Qas.LastOrDefault(q => q.Error == null && !string.IsNullOrEmpty(q.Answer));
+                if (last != null) req.Past.Add(last);
+            }
         }
 
         private void Close(QaItem qa)

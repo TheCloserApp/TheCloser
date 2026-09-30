@@ -40,7 +40,11 @@ namespace TheCloser.Ui
             GPane = "", GMonitor = "", GGlobe = "", GPerson = "", GSearch = "", GLink = "",
             GNewWindow = "", GWarn = "", GPlay = "", GCheck = "", GTrash = "", GAdd = "",
             GMic = "", GDoc = "", GArrowRight = "", GQuestion = "", GEdit = "", GPause = "",
-            GCamera = "", GCopy = "";
+            GCamera = "", GCopy = "",
+            GMemory = "\uE8F1", GRemove = "\uE738", GPeople = "\uE716", GPhone = "\uE717", GStop = "\uE71A",
+            GPower = "\uE7E8", GUndo = "\uE7A7", GExport = "\uEDE1", GWand = "\uE945", GCpu = "\uE950",
+            GWave = "\uE9D9", GContrast = "\uE793", GLayers = "\uE81E", GFont = "\uE8D2", GHighlight = "\uE7E6",
+            GKey = "\uE8D7", GLock = "\uE72E", GVideo = "\uE714";
 
         public static Color C(uint argb)
         {

@@ -20,10 +20,9 @@ namespace TheCloser
     public sealed class AppSettings
     {
         // --- API keys (encrypted) ---
-        public string AnthropicKeyEnc { get; set; }
         public string OpenRouterKeyEnc { get; set; }
+        public string ElevenLabsKeyEnc { get; set; }
         public string XaiKeyEnc { get; set; }
-        public string WhisperKeyEnc { get; set; }
 
         // --- Subscription (no Stripe or managed-provider secrets are stored here) ---
         public bool UseSubscription { get; set; }
@@ -33,6 +32,7 @@ namespace TheCloser
         public string SubscriptionPlan { get; set; }
         public List<string> SubscriptionModels { get; set; }
         public double SubscriptionAllowanceUSD { get; set; }
+        public bool SubscriptionTester { get; set; }       // Pro through a tester code
         public string CheckoutRequestId { get; set; }
         public string CheckoutPlan { get; set; }
         public string CheckoutSessionId { get; set; }
@@ -40,28 +40,24 @@ namespace TheCloser
         [ScriptIgnore] public string SubscriptionPass { get { return Secret.Unprotect(SubscriptionPassEnc); } set { SubscriptionPassEnc = Secret.Protect(value); } }
 
         // --- Models ---
-        public string Model { get; set; }                 // OpenRouter-style slug, e.g. "anthropic/claude-opus-5"
+        public string Model { get; set; }                 // OpenRouter id, e.g. "anthropic/claude-sonnet-5"
         public List<string> EnabledModels { get; set; }   // shown in the Model menu
         public string Effort { get; set; }
-        public string Length { get; set; }
 
-        // --- Call setup ---
-        public string PromptId { get; set; }
+        // --- Interview setup ---
+        public string PromptId { get; set; }              // "" = Default (Interview)
         public List<PromptDef> CustomPrompts { get; set; }
         public List<string> HiddenPrompts { get; set; }   // built-in prompts you've deleted
         public List<PromptDef> EditedPrompts { get; set; } // your versions of built-in prompts (same ids)
-        public string ResumeFile { get; set; }            // the "Reference file" on the setup screen (name kept for saved settings)
+        public string ResumeFile { get; set; }            // the "Resume" on the setup screen
         public string Context { get; set; }
         public List<string> Files { get; set; }
         public bool AutoGenerate { get; set; }
 
         // --- Listening ---
-        public string Transcription { get; set; }         // Automatic | LiveCaptions | Grok | Whisper
+        public string Transcription { get; set; }         // Automatic | LiveCaptions (Windows, on-device) | ElevenLabs | Grok
         public string AudioSource { get; set; }           // Both | System | Mic
         public string GrokModel { get; set; }
-        public string WhisperPreset { get; set; }         // OpenAI | Groq | Custom
-        public string WhisperBaseUrl { get; set; }
-        public string WhisperModel { get; set; }
         public string KeyTerms { get; set; }
         public string SpeechLanguage { get; set; }
         public int SilenceMs { get; set; }
@@ -71,11 +67,18 @@ namespace TheCloser
         public int OpacityPct { get; set; }
         public int BackgroundPct { get; set; }
         public int TextSizePct { get; set; }
+        public string KeywordStyle { get; set; }          // see Ui.KeywordStyles
         public bool HideFromCapture { get; set; }
         public bool OfferOnCall { get; set; }
         public bool ShowTranscript { get; set; }
         public bool FocusMode { get; set; }
         public bool OnboardingDone { get; set; }
+
+        // --- Memory: what earlier answers each request includes ---
+        public bool ReplayTurns { get; set; }             // earlier answers from this session
+        public bool ReplayAllTurns { get; set; }
+        public int ReplayTurnCount { get; set; }
+        public bool PullPastSessions { get; set; }        // one recent answer from each recent other session
         public double WinLeft { get; set; }
         public double WinTop { get; set; }
         public double WinWidth { get; set; }
@@ -84,10 +87,9 @@ namespace TheCloser
         public AppSettings()
         {
             SubscriptionModels = new List<string>();
-            Model = "anthropic/claude-opus-5";
+            Model = ModelCatalog.DefaultModel;
             EnabledModels = new List<string>(ModelCatalog.DefaultEnabled);
             Effort = "low";
-            Length = "Short";
             PromptId = Prompts.DefaultId;
             CustomPrompts = new List<PromptDef>();
             HiddenPrompts = new List<string>();
@@ -99,21 +101,23 @@ namespace TheCloser
             Transcription = "Automatic";
             AudioSource = "Both";
             GrokModel = "grok-voice-transcribe-2.0";
-            WhisperPreset = "OpenAI";
-            WhisperBaseUrl = "https://api.openai.com/v1";
-            WhisperModel = "gpt-4o-mini-transcribe";
             KeyTerms = "";
-            SpeechLanguage = "";
+            SpeechLanguage = "en";
             SilenceMs = 700;
             AutoAnswerDelayMs = 900;
             OpacityPct = 100;
-            BackgroundPct = 100;
-            TextSizePct = 125;
+            BackgroundPct = 60;
+            TextSizePct = 100;
+            KeywordStyle = "lightBlue";
             HideFromCapture = true;
             OfferOnCall = true;
             ShowTranscript = false;
             FocusMode = false;
             OnboardingDone = false;
+            ReplayTurns = true;
+            ReplayAllTurns = false;
+            ReplayTurnCount = 6;
+            PullPastSessions = false;
             WinLeft = -1;
             WinTop = -1;
             WinWidth = 0;
@@ -122,10 +126,9 @@ namespace TheCloser
 
         // --- Keys ------------------------------------------------------------------------------
 
-        [ScriptIgnore] public string AnthropicKey { get { return Secret.Unprotect(AnthropicKeyEnc); } set { AnthropicKeyEnc = Secret.Protect(value); } }
         [ScriptIgnore] public string OpenRouterKey { get { return Secret.Unprotect(OpenRouterKeyEnc); } set { OpenRouterKeyEnc = Secret.Protect(value); } }
+        [ScriptIgnore] public string ElevenLabsKey { get { return Secret.Unprotect(ElevenLabsKeyEnc); } set { ElevenLabsKeyEnc = Secret.Protect(value); } }
         [ScriptIgnore] public string XaiKey { get { return Secret.Unprotect(XaiKeyEnc); } set { XaiKeyEnc = Secret.Protect(value); } }
-        [ScriptIgnore] public string WhisperKey { get { return Secret.Unprotect(WhisperKeyEnc); } set { WhisperKeyEnc = Secret.Protect(value); } }
 
         private static string KeyOrEnv(string key, string env)
         {
@@ -134,31 +137,61 @@ namespace TheCloser
             return string.IsNullOrWhiteSpace(v) ? "" : v.Trim();
         }
 
-        [ScriptIgnore] public string EffectiveAnthropicKey { get { return KeyOrEnv(AnthropicKey, "ANTHROPIC_API_KEY"); } }
         [ScriptIgnore] public string EffectiveOpenRouterKey { get { return KeyOrEnv(OpenRouterKey, "OPENROUTER_API_KEY"); } }
+        [ScriptIgnore] public string EffectiveElevenLabsKey { get { return KeyOrEnv(ElevenLabsKey, "ELEVENLABS_API_KEY"); } }
         [ScriptIgnore] public string EffectiveXaiKey { get { return KeyOrEnv(XaiKey, "XAI_API_KEY"); } }
-
-        [ScriptIgnore]
-        public string EffectiveWhisperKey
-        {
-            get { return KeyOrEnv(WhisperKey, WhisperPreset == "Groq" ? "GROQ_API_KEY" : "OPENAI_API_KEY"); }
-        }
 
         // --- Derived ---------------------------------------------------------------------------
 
         [ScriptIgnore] public bool CaptureMic { get { return AudioSource != "System"; } }
         [ScriptIgnore] public bool CaptureSystem { get { return AudioSource != "Mic"; } }
 
-        /// <summary>The transcription engine actually used ("Automatic" picks the best one you have a key for).</summary>
+        /// <summary>
+        /// The transcription engine actually used. Pro transcribes on this PC; a cloud engine without its key falls back
+        /// to Windows Live Captions; "Automatic" prefers ElevenLabs, then Grok. Same rules as the Mac app.
+        /// </summary>
         [ScriptIgnore]
         public string EffectiveTranscription
         {
             get
             {
-                if (Transcription != "Automatic") return Transcription;
-                if (EffectiveXaiKey.Length > 0) return "Grok";
-                if (EffectiveWhisperKey.Length > 0) return "Whisper";
-                return "LiveCaptions";
+                if (UseSubscription && SubscriptionClient.HasActivePass(this)) return "LiveCaptions";
+                switch (Transcription)
+                {
+                    case "LiveCaptions": return "LiveCaptions";
+                    case "ElevenLabs": return EffectiveElevenLabsKey.Length > 0 ? "ElevenLabs" : "LiveCaptions";
+                    case "Grok": return EffectiveXaiKey.Length > 0 ? "Grok" : "LiveCaptions";
+                    default:
+                        if (EffectiveElevenLabsKey.Length > 0) return "ElevenLabs";
+                        return EffectiveXaiKey.Length > 0 ? "Grok" : "LiveCaptions";
+                }
+            }
+        }
+
+        /// <summary>Keys an interview needs before it can start: OpenRouter, plus ElevenLabs (or xAI when Grok is picked). None on Pro.</summary>
+        [ScriptIgnore]
+        public List<string> MissingKeys
+        {
+            get
+            {
+                var missing = new List<string>();
+                if (UseSubscription && SubscriptionClient.HasActivePass(this)) return missing;
+                if (EffectiveOpenRouterKey.Length == 0) missing.Add("OpenRouter");
+                if (Transcription == "Grok") { if (EffectiveXaiKey.Length == 0) missing.Add("xAI"); }
+                else if (EffectiveElevenLabsKey.Length == 0) missing.Add("ElevenLabs");
+                return missing;
+            }
+        }
+
+        /// <summary>"Add your OpenRouter and ElevenLabs keys to start. Click to open API keys." (null when nothing is missing)</summary>
+        [ScriptIgnore]
+        public string MissingKeysText
+        {
+            get
+            {
+                var m = MissingKeys;
+                if (m.Count == 0) return null;
+                return "Add your " + string.Join(" and ", m) + " key" + (m.Count > 1 ? "s" : "") + " to start. Click to open API keys.";
             }
         }
 
@@ -199,20 +232,22 @@ namespace TheCloser
             if (CustomPrompts == null) CustomPrompts = new List<PromptDef>();
             if (Files == null) Files = new List<string>();
             Model = ModelCatalog.NormalizeSlug(Model);
-            if (string.IsNullOrEmpty(Model)) Model = "anthropic/claude-opus-5";
+            if (string.IsNullOrEmpty(Model) || Model == "anthropic/claude-opus-5") Model = ModelCatalog.DefaultModel; // the old default
+            EnabledModels.Remove("anthropic/claude-opus-5");
             if (!EnabledModels.Contains(Model)) EnabledModels.Insert(0, Model);
-            if (string.IsNullOrEmpty(PromptId) || PromptId == "interview") PromptId = Prompts.DefaultId; // "interview" was replaced by "call"
             if (HiddenPrompts == null) HiddenPrompts = new List<string>();
             if (EditedPrompts == null) EditedPrompts = new List<PromptDef>();
-            if (Prompts.All(this).Count == 0) HiddenPrompts.Clear();
-            if (!Prompts.All(this).Any(p => p.Id == PromptId)) PromptId = Prompts.All(this)[0].Id; // its prompt was deleted
+            if (PromptId == null || !Prompts.All(this).Any(p => p.Id == PromptId)) PromptId = Prompts.DefaultId; // deleted, or the old defaults
+            if (Transcription != "LiveCaptions" && Transcription != "ElevenLabs" && Transcription != "Grok") Transcription = "Automatic";
             if (ResumeFile == null) ResumeFile = "";
             if (Context == null) Context = "";
             if (KeyTerms == null) KeyTerms = "";
-            if (SpeechLanguage == null) SpeechLanguage = "";
-            OpacityPct = Math.Max(30, Math.Min(100, OpacityPct));
-            BackgroundPct = Math.Max(20, Math.Min(100, BackgroundPct));
-            TextSizePct = Math.Max(75, Math.Min(200, TextSizePct));
+            if (SpeechLanguage == null) SpeechLanguage = "en";
+            if (!Ui.KeywordStyles.IsKnown(KeywordStyle)) KeywordStyle = Ui.KeywordStyles.Standard;
+            OpacityPct = Math.Max(20, Math.Min(100, OpacityPct));
+            BackgroundPct = Math.Max(0, Math.Min(100, BackgroundPct));
+            TextSizePct = Math.Max(80, Math.Min(160, TextSizePct));
+            ReplayTurnCount = Math.Max(1, Math.Min(50, ReplayTurnCount));
         }
 
         /// <summary>Default settings, never read from or written to disk (`--render`).</summary>

@@ -14,29 +14,19 @@ namespace TheCloser
         public string ContextText;                       // reference file + context + text attachments
         public List<Attachment> Documents = new List<Attachment>(); // PDFs and images
         public string Transcript;
-        public List<QaItem> Recent = new List<QaItem>(); // earlier answers, for follow-ups like "shorter"
+        public List<QaItem> Recent = new List<QaItem>(); // earlier answers in this session (Settings > Memory)
+        public List<QaItem> Past = new List<QaItem>();   // one recent answer from each recent other session (Settings > Memory)
         public AnswerKind Kind;
         public string Question;                          // Auto/Manual: the question to answer, when known
         public string UserText;
         public string ScreenshotJpegBase64;
-        public string Length = "Short";
         public string Effort = "low";
     }
 
-    /// <summary>Builds provider payloads. Stable content (system prompt, context, documents) comes first and is marked
-    /// for prompt caching on the Anthropic path; the transcript and question come after the cache breakpoints.</summary>
+    /// <summary>Builds the OpenRouter payload. Stable content (system prompt, context, documents) comes first, so
+    /// providers that cache prompts can reuse it; the transcript and question come last.</summary>
     internal static class PromptBuilder
     {
-        private static string LengthRule(string length)
-        {
-            switch (length)
-            {
-                case "Detailed": return "Length: up to about 250 words (code blocks do not count).";
-                case "Medium": return "Length: up to about 130 words (code blocks do not count).";
-                default: return "Length: up to about 70 words (code blocks do not count). Be ruthless about brevity.";
-            }
-        }
-
         /// <summary>Collects the user's context (reference file, notes, attached files) for a request.</summary>
         public static void AddContext(AnswerRequest r, AppSettings s)
         {
@@ -63,6 +53,13 @@ namespace TheCloser
         private static string TaskText(AnswerRequest r)
         {
             var task = new StringBuilder();
+            if (r.Past.Count > 0)
+            {
+                task.Append("<past_sessions>\n");
+                foreach (var qa in r.Past)
+                    task.Append("Q: ").Append(qa.Question).Append("\nA: ").Append(qa.CurrentText).Append("\n\n");
+                task.Append("</past_sessions>\n\n");
+            }
             if (r.Recent.Count > 0)
             {
                 task.Append("<earlier_answers>\n");
@@ -93,42 +90,10 @@ namespace TheCloser
             return task.ToString();
         }
 
-        /// <summary>Claude Messages API payload (direct Anthropic).</summary>
-        public static Dictionary<string, object> ForAnthropic(AnswerRequest r, string model)
-        {
-            var system = new List<object> { Json.Obj("type", "text", "text", r.SystemPrompt + "\n\n" + LengthRule(r.Length)) };
-            if (!string.IsNullOrWhiteSpace(r.ContextText))
-                system.Add(Json.Obj("type", "text", "text", "The user's own background material:\n" + r.ContextText));
-            ((Dictionary<string, object>)system[system.Count - 1])["cache_control"] = Json.Obj("type", "ephemeral");
-
-            var content = new List<object>();
-            Dictionary<string, object> lastDoc = null;
-            foreach (var d in r.Documents)
-            {
-                lastDoc = d.Kind == "pdf"
-                    ? Json.Obj("type", "document", "title", d.Name, "source", Json.Obj("type", "base64", "media_type", "application/pdf", "data", d.Base64))
-                    : Json.Obj("type", "image", "source", Json.Obj("type", "base64", "media_type", d.MediaType, "data", d.Base64));
-                content.Add(lastDoc);
-            }
-            if (lastDoc != null) lastDoc["cache_control"] = Json.Obj("type", "ephemeral");
-            if (!string.IsNullOrEmpty(r.ScreenshotJpegBase64))
-                content.Add(Json.Obj("type", "image", "source", Json.Obj("type", "base64", "media_type", "image/jpeg", "data", r.ScreenshotJpegBase64)));
-            content.Add(Json.Obj("type", "text", "text", TaskText(r)));
-
-            var body = Json.Obj(
-                "model", model,
-                "max_tokens", 16000,
-                "system", system,
-                "messages", new List<object> { Json.Obj("role", "user", "content", content) });
-            if (ClaudeClient.SupportsEffort(model) && !string.IsNullOrEmpty(r.Effort))
-                body["output_config"] = Json.Obj("effort", r.Effort);
-            return body;
-        }
-
         /// <summary>OpenRouter chat-completions payload (OpenAI message format).</summary>
         public static Dictionary<string, object> ForOpenRouter(AnswerRequest r, string model)
         {
-            var system = r.SystemPrompt + "\n\n" + LengthRule(r.Length);
+            var system = r.SystemPrompt;
             if (!string.IsNullOrWhiteSpace(r.ContextText)) system += "\n\nThe user's own background material:\n" + r.ContextText;
 
             var content = new List<object>();
@@ -152,16 +117,6 @@ namespace TheCloser
                     Json.Obj("role", "system", "content", system),
                     Json.Obj("role", "user", "content", content)
                 });
-        }
-
-        public static Dictionary<string, object> BuildPing(string model)
-        {
-            var body = Json.Obj(
-                "model", model,
-                "max_tokens", 1024,
-                "messages", new List<object> { Json.Obj("role", "user", "content", "Reply with exactly: OK") });
-            if (ClaudeClient.SupportsEffort(model)) body["output_config"] = Json.Obj("effort", "low");
-            return body;
         }
     }
 }

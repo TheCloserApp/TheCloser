@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -10,8 +9,8 @@ using System.Windows.Media;
 
 namespace TheCloser.Ui
 {
-    /// <summary>Settings: icon rail (General, Models, Prompts, Shortcuts) and the page content.</summary>
-    internal sealed partial class SettingsView : Grid
+    /// <summary>Settings: icon rail (General, AI, Prompts, Memory, Shortcuts) and the page content - the same pages as the Mac app.</summary>
+    internal sealed class SettingsView : Grid
     {
         private readonly OverlayWindow W;
         private AppSettings S { get { return W.S; } }
@@ -39,9 +38,9 @@ namespace TheCloser.Ui
             paneBtn.Margin = new Thickness(0, 0, 0, 14);
             _railPanel.Children.Add(paneBtn);
             AddRail("general", U.Icon(U.GGear, 17, null), "General");
-            AddRail("models", U.Sparkle(17, null), "Models");
-            AddRail("subscription", U.Icon(U.GPerson, 17, null), "Subscription");
+            AddRail("ai", U.Sparkle(17, null), "AI");
             AddRail("prompts", U.Icon(U.GChat, 17, null), "Prompts");
+            AddRail("memory", U.Icon(U.GMemory, 17, null), "Memory");
             AddRail("shortcuts", U.Icon(U.GKeyboard, 17, null), "Shortcuts");
             Children.Add(new Border { Background = U.B(0xFF181818), CornerRadius = new CornerRadius(18, 0, 0, 18), Child = _railPanel });
 
@@ -78,16 +77,21 @@ namespace TheCloser.Ui
             }
         }
 
+        /// <summary>Opens a page. Older page names still work: "models" and "subscription" are now "ai".</summary>
         public void Show(string key)
         {
+            if (key == "models" || key == "subscription") key = "ai";
+            // Pro manages memory itself.
+            if (key == "memory" && W.Billing.IsActive) key = "general";
             _current = key;
+            _rail["memory"].Visibility = W.Billing.IsActive ? Visibility.Collapsed : Visibility.Visible;
             if (_rail.ContainsKey(key) && _rail[key].IsChecked != true) _rail[key].IsChecked = true;
             FrameworkElement content;
             switch (key)
             {
-                case "models": content = ModelsPage(); break;
-                case "subscription": content = SubscriptionPage(); break;
+                case "ai": content = AiPage(); break;
                 case "prompts": content = PromptsPage(); break;
+                case "memory": content = MemoryPage(); break;
                 case "shortcuts": content = ShortcutsPage(); break;
                 default: content = GeneralPage(); break;
             }
@@ -105,13 +109,13 @@ namespace TheCloser.Ui
 
         private static StackPanel Page()
         {
-            return new StackPanel { Margin = new Thickness(26, 20, 26, 26), MaxWidth = 860, HorizontalAlignment = HorizontalAlignment.Left };
+            return new StackPanel { Margin = new Thickness(26, 20, 26, 26), MaxWidth = 860 };
         }
 
         private static TextBlock H(string text, bool first = false)
         {
-            var t = U.T(text, 18, U.Text, FontWeights.SemiBold);
-            t.Margin = new Thickness(0, first ? 0 : 26, 0, 10);
+            var t = U.T(text, 17, U.Text, FontWeights.SemiBold);
+            t.Margin = new Thickness(0, first ? 0 : 28, 0, 10);
             return t;
         }
 
@@ -122,20 +126,25 @@ namespace TheCloser.Ui
             return t;
         }
 
+        private static StackPanel TwoLine(string title, string subtitle)
+        {
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(U.T(title, 15.5, U.Text));
+            if (subtitle != null)
+            {
+                var s = U.T(subtitle, 13, U.Text2);
+                s.Margin = new Thickness(0, 2, 0, 0);
+                text.Children.Add(s);
+            }
+            return text;
+        }
+
         private static Grid SwitchRow(string title, string subtitle, bool value, Action<bool> changed)
         {
             var g = new Grid();
             g.ColumnDefinitions.Add(new ColumnDefinition());
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            text.Children.Add(U.T(title, 16, U.Text, FontWeights.SemiBold));
-            if (subtitle != null)
-            {
-                var s = U.T(subtitle, 13.5, U.Text2);
-                s.Margin = new Thickness(0, 3, 0, 0);
-                text.Children.Add(s);
-            }
-            g.Children.Add(text);
+            g.Children.Add(TwoLine(title, subtitle));
             var sw = new CheckBox { Style = U.Style("Toggle.Switch"), IsChecked = value, Margin = new Thickness(20, 0, 0, 0) };
             sw.Checked += delegate { changed(true); };
             sw.Unchecked += delegate { changed(false); };
@@ -144,28 +153,35 @@ namespace TheCloser.Ui
             return g;
         }
 
-        private Grid SliderRow(string label, int min, int max, int value, Action<int> changed)
+        private static Grid SliderRow(string label, int min, int max, int value, Func<int, string> display, Action<int> changed)
         {
             var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
             g.ColumnDefinitions.Add(new ColumnDefinition());
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
-            var l = U.T(label, 15.5, U.Text2);
+            var l = U.T(label, 15, U.Text2);
             l.VerticalAlignment = VerticalAlignment.Center;
             g.Children.Add(l);
             var sl = new Slider { Style = U.Style("Slider.Dots"), Minimum = min, Maximum = max, Value = value, SmallChange = 5, LargeChange = 10, TickFrequency = 5, IsSnapToTickEnabled = true, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(sl, 1);
             g.Children.Add(sl);
-            var v = new TextBlock { Text = value + "%", FontFamily = U.Mono, FontSize = 14.5, Foreground = U.Text, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            var v = new TextBlock { Text = display(value), FontFamily = U.Mono, FontSize = 14, Foreground = U.Text2, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(v, 2);
             g.Children.Add(v);
             sl.ValueChanged += delegate
             {
                 int n = (int)Math.Round(sl.Value);
-                v.Text = n + "%";
+                v.Text = display(n);
                 changed(n);
             };
             return g;
+        }
+
+        private static string Pct(int n) { return n + "%"; }
+
+        private static Border Box(UIElement child)
+        {
+            return U.Box(child, new Thickness(20, 16, 20, 16));
         }
 
         // --- General -----------------------------------------------------------------------------
@@ -174,235 +190,135 @@ namespace TheCloser.Ui
         {
             var p = Page();
             p.Children.Add(H("Appearance", true));
-            p.Children.Add(Sub("Also in the … menu at the top. Text size sets the size of the answers."));
             var ap = new StackPanel();
-            ap.Children.Add(SliderRow("Opacity", 30, 100, S.OpacityPct, n => { S.OpacityPct = n; W.ApplyAppearance(); W.SaveSettingsSoon(); }));
-            ap.Children.Add(SliderRow("Background", 20, 100, S.BackgroundPct, n => { S.BackgroundPct = n; W.ApplyAppearance(); W.SaveSettingsSoon(); }));
-            ap.Children.Add(SliderRow("Text size", 75, 200, S.TextSizePct, n => { S.TextSizePct = n; W.ApplyAppearance(); W.SaveSettingsSoon(); }));
-            p.Children.Add(U.Box(ap, new Thickness(22, 14, 22, 14)));
+            ap.Children.Add(SliderRow("Opacity", 20, 100, S.OpacityPct, Pct, n => { S.OpacityPct = n; W.ApplyAppearance(); W.SaveSettingsSoon(); }));
+            ap.Children.Add(SliderRow("Background", 0, 100, S.BackgroundPct, n => n == 0 ? "Off" : n + "%", n => { S.BackgroundPct = n; W.ApplyAppearance(); W.SaveSettingsSoon(); }));
+            ap.Children.Add(SliderRow("Text size", 80, 160, S.TextSizePct, Pct, n => { S.TextSizePct = n; W.ApplyAppearance(); W.SaveSettingsSoon(); }));
+            ap.Children.Add(KeywordRow());
+            p.Children.Add(Box(ap));
 
             p.Children.Add(H("Recording"));
-            p.Children.Add(U.Box(SwitchRow("Offer to start when a call begins", "When Zoom, Meet or Teams starts using your mic.", S.OfferOnCall,
-                on => { S.OfferOnCall = on; W.SaveSettingsSoon(); }), new Thickness(22, 18, 22, 18)));
+            var rec = new StackPanel();
+            rec.Children.Add(SwitchRow("Offer to start when a call begins", "When Zoom, Meet or Teams starts using your mic.", S.OfferOnCall,
+                on => { S.OfferOnCall = on; W.SaveSettingsSoon(); W.OnOfferOnCallChanged(); }));
+            // Pro always transcribes on this PC, so there's nothing to pick.
+            if (!W.Billing.IsActive)
+            {
+                var engine = new Grid { Margin = new Thickness(0, 16, 0, 0) };
+                engine.ColumnDefinitions.Add(new ColumnDefinition());
+                engine.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                engine.Children.Add(TwoLine("Transcription engine", "Windows runs on this PC. ElevenLabs and Grok need a key."));
+                var pick = W.EnginePicker(Refresh);
+                pick.Margin = new Thickness(16, 0, 0, 0);
+                pick.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn(pick, 1);
+                engine.Children.Add(pick);
+                rec.Children.Add(engine);
+            }
+            p.Children.Add(Box(rec));
 
             p.Children.Add(H("Privacy"));
-            p.Children.Add(U.Box(SwitchRow("Hide from screen sharing", "Keeps the overlay out of screen shares and recordings.", S.HideFromCapture,
-                on => { if (S.HideFromCapture != on) W.ToggleStealth(); }), new Thickness(22, 18, 22, 18)));
+            p.Children.Add(Box(SwitchRow("Hide from screen sharing", "Keeps the overlay out of screen shares and recordings.", S.HideFromCapture,
+                on => { if (S.HideFromCapture != on) W.ToggleStealth(); })));
 
             p.Children.Add(H("Onboarding"));
             var replay = U.Btn("Btn.Pill", "Replay welcome tour", () => W.ShowWelcomeTour());
             replay.HorizontalAlignment = HorizontalAlignment.Left;
-            p.Children.Add(U.Box(replay, new Thickness(22, 18, 22, 18)));
+            p.Children.Add(Box(replay));
             return p;
         }
 
-        // --- Models & keys -----------------------------------------------------------------------
+        /// <summary>Keywords: the style picker and a sample answer showing it at the current text size.</summary>
+        private FrameworkElement KeywordRow()
+        {
+            var sp = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+            var g = new Grid();
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            var l = U.T("Keywords", 15, U.Text2);
+            l.VerticalAlignment = VerticalAlignment.Center;
+            g.Children.Add(l);
+            var preview = new Border { Background = U.B(0xFF0A0A0A), CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 10, 14, 12), Margin = new Thickness(0, 12, 0, 4) };
+            Action showPreview = delegate { preview.Child = MarkdownView.Render(KeywordStyles.Sample, OverlayWindow.AnswerSize(S), S.KeywordStyle); };
+            var pick = W.KeywordPicker(showPreview);
+            pick.HorizontalAlignment = HorizontalAlignment.Left;
+            Grid.SetColumn(pick, 1);
+            g.Children.Add(pick);
+            sp.Children.Add(g);
+            showPreview();
+            sp.Children.Add(preview);
+            return sp;
+        }
 
-        private FrameworkElement ModelsPage()
+        // --- AI ----------------------------------------------------------------------------------
+
+        private FrameworkElement AiPage()
         {
             var p = Page();
-            p.Children.Add(H("Model", true));
-            p.Children.Add(Sub("Writes every answer. Also in the … menu at the top."));
-            var pick = W.ModelPicker();
-            pick.HorizontalAlignment = HorizontalAlignment.Left;
-            p.Children.Add(pick);
-
-            var billing = U.Btn("Btn.Pill", S.UseSubscription ? "View subscription and usage" : "Get Pro — AI answers without your own key", () => Show("subscription"));
-            billing.HorizontalAlignment = HorizontalAlignment.Left;
-            billing.Margin = new Thickness(0, 14, 0, 0);
-            p.Children.Add(billing);
-
-            p.Children.Add(H("API keys"));
-            p.Children.Add(Sub(S.UseSubscription
-                ? "Your subscription handles AI answers. Optional speech keys are billed separately by their providers. Switch off subscription answers to use your own AI keys."
-                : "Use your own keys. They're encrypted for your Windows account and only sent to each provider."));
-            var keys = new StackPanel();
-            keys.Children.Add(KeyRow("Anthropic", "Claude models, direct (fastest, prompt caching)", "sk-ant-...", S.AnthropicKey, "https://console.anthropic.com/settings/keys",
-                v => S.AnthropicKey = v, TestAnthropic));
-            keys.Children.Add(U.Divider(new Thickness(0, 14, 0, 14)));
-            keys.Children.Add(KeyRow("OpenRouter", "GPT, Gemini, Grok, Kimi and hundreds more", "sk-or-...", S.OpenRouterKey, "https://openrouter.ai/keys",
-                v => S.OpenRouterKey = v, k => OpenRouterClient.TestKeyAsync(k)));
-            keys.Children.Add(U.Divider(new Thickness(0, 14, 0, 14)));
-            keys.Children.Add(KeyRow("xAI", "Grok Voice Transcribe - live transcription", "xai-...", S.XaiKey, "https://console.x.ai",
-                v => S.XaiKey = v, TestXai));
-            keys.Children.Add(U.Divider(new Thickness(0, 14, 0, 14)));
-            keys.Children.Add(KeyRow("OpenAI", "Whisper transcription (optional alternative)", "sk-...", S.WhisperKey, "https://platform.openai.com/api-keys",
-                v => S.WhisperKey = v, TestWhisper));
-            p.Children.Add(U.Box(keys, new Thickness(22, 18, 22, 18)));
+            AddProSection(p);
 
             p.Children.Add(H("Model picker"));
             p.Children.Add(Sub("Choose which models show in the model menu."));
-            p.Children.Add(U.Box(ModelList(), new Thickness(22, 16, 22, 16)));
+            p.Children.Add(Box(ModelList()));
 
-            p.Children.Add(H("Answers"));
-            var ans = new StackPanel();
-            ans.Children.Add(Label("Answer length"));
-            ans.Children.Add(U.Segmented(new[] { "Short", "Medium", "Detailed" }, S.Length, v => { S.Length = v; W.SaveSettingsSoon(); }));
-            ans.Children.Add(Label("Thinking effort (Claude, GPT and Gemini)"));
-            ans.Children.Add(U.Segmented(new[] { "low", "medium", "high" }, S.Effort, v => { S.Effort = v; W.SaveSettingsSoon(); }));
-            var effortHint = U.T("Low starts answering fastest - best for live calls.", 13, U.Text3);
-            effortHint.Margin = new Thickness(0, -2, 0, 0);
-            ans.Children.Add(effortHint);
-            p.Children.Add(U.Box(ans, new Thickness(22, 8, 22, 18)));
-
-            p.Children.Add(H("Transcription"));
-            var tr = new StackPanel();
-            var audioHint = U.T("", 13, U.Text3);
-            Action showAudioHint = delegate { audioHint.Text = SetupView.AudioHint(S) + " Also on the Start call screen."; };
-            tr.Children.Add(Label("Engine"));
-            tr.Children.Add(U.Segmented(new[] { "Automatic", "Live Captions", "xAI Grok", "Whisper" }, EngineLabel(S.Transcription), v =>
+            // Pro includes the keys.
+            if (!W.Billing.IsActive)
             {
-                S.Transcription = v == "Live Captions" ? "LiveCaptions" : v == "xAI Grok" ? "Grok" : v;
-                W.SaveSettingsSoon();
-                W.Ctl.RestartSource();
-                showAudioHint();
-                W.RefreshSetup();
-            }));
-            var auto = U.T("Automatic uses xAI Grok when you've added an xAI key, then Whisper, then the free Windows Live Captions.", 13, U.Text3);
-            auto.Margin = new Thickness(0, -2, 0, 0);
-            tr.Children.Add(auto);
-            tr.Children.Add(Label("Audio input"));
-            tr.Children.Add(W.AudioSourcePicker(showAudioHint));
-            showAudioHint();
-            audioHint.Margin = new Thickness(0, -2, 0, 0);
-            tr.Children.Add(audioHint);
-            tr.Children.Add(Label("Key terms (names, companies, jargon - comma-separated)"));
-            var terms = U.Input("e.g. Kubernetes, Priya, Acme Pay", S.KeyTerms, false);
-            terms.LostFocus += delegate { if (S.KeyTerms != terms.Text) { S.KeyTerms = terms.Text; W.SaveSettingsSoon(); W.Ctl.RestartSource(); } };
-            tr.Children.Add(terms);
-            tr.Children.Add(Label("Language"));
-            var langHint = U.T("", 13, U.Text3);
-            Action showHint = delegate { langHint.Text = SetupView.LanguageHint(S) + " Also on the Start call screen."; };
-            var lang = W.LanguagePicker(showHint);
-            lang.HorizontalAlignment = HorizontalAlignment.Left;
-            tr.Children.Add(lang);
-            showHint();
-            langHint.Margin = new Thickness(0, 8, 0, 0);
-            tr.Children.Add(langHint);
-            tr.Children.Add(Label("Whisper provider"));
-            tr.Children.Add(U.Segmented(new[] { "OpenAI", "Groq" }, S.WhisperPreset, v =>
-            {
-                S.WhisperPreset = v;
-                S.WhisperBaseUrl = v == "Groq" ? "https://api.groq.com/openai/v1" : "https://api.openai.com/v1";
-                S.WhisperModel = v == "Groq" ? "whisper-large-v3-turbo" : "gpt-4o-mini-transcribe";
-                W.SaveSettingsSoon();
-            }));
-            p.Children.Add(U.Box(tr, new Thickness(22, 8, 22, 18)));
+                bool grok = S.Transcription == "Grok";
+                p.Children.Add(H("API keys"));
+                p.Children.Add(Sub("OpenRouter runs the models; " + (grok ? "xAI" : "ElevenLabs") + " transcribes. Stored only on this PC."));
+                var keys = new StackPanel();
+                keys.Children.Add(KeyLabel("OpenRouter", true));
+                keys.Children.Add(W.KeyField("sk-or-…", S.OpenRouterKey, v => S.OpenRouterKey = v));
+                keys.Children.Add(KeyLabel("ElevenLabs", false));
+                keys.Children.Add(W.KeyField("sk_…", S.ElevenLabsKey, v => S.ElevenLabsKey = v));
+                if (grok || !string.IsNullOrEmpty(S.XaiKey))
+                {
+                    keys.Children.Add(KeyLabel("xAI", false));
+                    keys.Children.Add(W.KeyField("xai-…", S.XaiKey, v => S.XaiKey = v));
+                }
+                p.Children.Add(Box(keys));
+            }
             return p;
         }
 
-        private static string EngineLabel(string engine)
+        private static TextBlock KeyLabel(string name, bool first)
         {
-            return engine == "LiveCaptions" ? "Live Captions" : engine == "Grok" ? "xAI Grok" : engine;
-        }
-
-        private static TextBlock Label(string text)
-        {
-            var t = U.T(text, 14, U.Text2, FontWeights.SemiBold);
-            t.Margin = new Thickness(0, 12, 0, 8);
+            var t = U.T(name, 14, U.Text2, FontWeights.SemiBold);
+            t.Margin = new Thickness(0, first ? 0 : 14, 0, 6);
             return t;
         }
 
-        private FrameworkElement KeyRow(string name, string desc, string placeholder, string value, string url, Action<string> save, Func<string, Task<string>> test)
+        /// <summary>TheCloser Pro: coming soon with the tester code, or your plan (or the test budget) and its usage.</summary>
+        private void AddProSection(StackPanel p)
         {
-            var g = new Grid();
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
-            g.ColumnDefinitions.Add(new ColumnDefinition());
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) };
-            var title = new StackPanel { Orientation = Orientation.Horizontal };
-            title.Children.Add(U.T(name, 15.5, U.Text, FontWeights.SemiBold));
-            var dot = new System.Windows.Shapes.Ellipse { Width = 7, Height = 7, Margin = new Thickness(8, 2, 0, 0), VerticalAlignment = VerticalAlignment.Center, Fill = string.IsNullOrEmpty(value) ? U.Text3 : U.Green };
-            title.Children.Add(dot);
-            info.Children.Add(title);
-            var d = U.T(desc, 13, U.Text3);
-            d.Margin = new Thickness(0, 2, 0, 0);
-            info.Children.Add(d);
-            g.Children.Add(info);
-
-            PasswordBox box;
-            var field = U.SecretField(placeholder, value, out box);
-            field.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(field, 1);
-            g.Children.Add(field);
-            var status = U.T("", 12.5, U.Text3);
-            status.Margin = new Thickness(0, 6, 0, 0);
-            box.LostFocus += delegate
+            var b = W.Billing;
+            if (b.IsActive)
             {
-                save(box.Password.Trim());
-                dot.Fill = box.Password.Trim().Length > 0 ? U.Green : U.Text3;
-                W.SaveSettingsSoon();
-                W.OnKeysChanged();
-            };
-
-            var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            Button testBtn = null;
-            testBtn = U.Btn("Btn.Ghost", "Test", async () =>
-            {
-                save(box.Password.Trim());
-                W.SaveSettingsSoon();
-                W.OnKeysChanged();
-                testBtn.IsEnabled = false;
-                status.Foreground = U.Text3;
-                status.Text = "Testing...";
-                string error;
-                try { error = await test(box.Password.Trim()); }
-                catch (Exception ex) { error = ex.Message; }
-                testBtn.IsEnabled = true;
-                status.Foreground = error == null ? U.Green : U.Amber;
-                status.Text = error == null ? "Connected ✓" : error;
-            });
-            testBtn.Foreground = U.Blue;
-            actions.Children.Add(testBtn);
-            var get = U.Btn("Btn.Ghost", U.Icon(U.GNewWindow, 13, null), () => OverlayWindow.OpenUrl(url), "Get a key");
-            actions.Children.Add(get);
-            Grid.SetColumn(actions, 2);
-            g.Children.Add(actions);
-
-            var wrap = new StackPanel();
-            wrap.Children.Add(g);
-            var statusRow = new Grid();
-            statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
-            statusRow.ColumnDefinitions.Add(new ColumnDefinition());
-            Grid.SetColumn(status, 1);
-            statusRow.Children.Add(status);
-            wrap.Children.Add(statusRow);
-            return wrap;
-        }
-
-        private async Task<string> TestAnthropic(string key)
-        {
-            if (string.IsNullOrWhiteSpace(key)) return "Enter a key first.";
-            var model = ModelCatalog.IsAnthropic(S.Model) ? ModelCatalog.AnthropicApiId(S.Model) : "claude-haiku-4-5";
-            using (var cts = new System.Threading.CancellationTokenSource(60000))
-            {
-                try
+                var plan = b.Plan == "pro_max" ? "TheCloser Pro Max" : "TheCloser Pro";
+                p.Children.Add(H(b.IsTester ? plan + " · Tester" : plan, true));
+                p.Children.Add(Sub(b.IsTester
+                    ? "Tester access, from a budget shared by all testers. Thanks for helping!"
+                    : "No keys needed: the models and transcription are included."));
+                var box = new StackPanel();
+                box.Children.Add(ProViews.UsageMeter(b));
+                if (!b.IsTester && b.CanManageBilling)
                 {
-                    await new ClaudeClient().StreamAsync(key, PromptBuilder.BuildPing(model), delegate { }, cts.Token);
-                    return null;
+                    var manage = U.Btn("Btn.Pill", "Manage subscription", async delegate
+                    {
+                        try { OverlayWindow.OpenUrl(await b.PortalAsync()); }
+                        catch (Exception ex) { W.Toast(ex.Message, true); }
+                    });
+                    manage.HorizontalAlignment = HorizontalAlignment.Left;
+                    manage.Margin = new Thickness(0, 14, 0, 0);
+                    box.Children.Add(manage);
                 }
-                catch (Exception ex) { return ex.Message; }
+                p.Children.Add(Box(box));
+                return;
             }
-        }
-
-        private Task<string> TestXai(string key)
-        {
-            var probe = S.Clone();
-            probe.XaiKey = key;
-            return GrokStreamingSource.TestConnectionAsync(probe);
-        }
-
-        private async Task<string> TestWhisper(string key)
-        {
-            if (string.IsNullOrWhiteSpace(key)) return "Enter a key first.";
-            try
-            {
-                var stt = new SpeechToTextClient(S.WhisperBaseUrl, S.WhisperModel, key, "");
-                using (var cts = new System.Threading.CancellationTokenSource(30000))
-                    await stt.TranscribeAsync(Wav.Encode(new short[16000], 16000), null, cts.Token);
-                return null;
-            }
-            catch (Exception ex) { return ex.Message; }
+            p.Children.Add(H("TheCloser Pro", true));
+            p.Children.Add(Sub("Coming soon: no keys, with the models and transcription included."));
+            p.Children.Add(Box(ProViews.TesterCodeEntry(W, Refresh)));
         }
 
         private FrameworkElement ModelList()
@@ -412,6 +328,8 @@ namespace TheCloser.Ui
             if (_showAllModels && ModelCatalog.Remote != null) models = ModelCatalog.Remote;
             var extra = S.EnabledModels.Where(slug => !models.Any(m => m.Slug == slug)).Select(slug => new ModelInfo(slug, ModelCatalog.Name(slug))).ToList();
             var all = models.Concat(extra).ToList();
+            // Pro: only the plan's models.
+            if (W.Billing.IsActive) all = all.Where(m => W.Billing.Models.Contains(m.Slug)).ToList();
 
             if (_showAllModels)
             {
@@ -431,39 +349,47 @@ namespace TheCloser.Ui
             }
             else FillGroups(sp, all);
 
-            var footer = new Grid { Margin = new Thickness(0, 14, 0, 0) };
-            footer.ColumnDefinitions.Add(new ColumnDefinition());
-            footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var add = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            add.Children.Add(new TextBlock { Text = "Missing a model?", Foreground = U.Text2, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
-            var addBtn = U.Btn("Btn.Link", "Add by OpenRouter ID", () => W.AddModelById(Refresh));
-            addBtn.Foreground = U.Text;
-            addBtn.FontSize = 14;
-            add.Children.Add(addBtn);
-            footer.Children.Add(add);
-            var showAll = U.Btn("Btn.Pill", _showAllModels ? "Show fewer" : "Show all", async () =>
+            if (!W.Billing.IsActive)
             {
-                if (!_showAllModels && ModelCatalog.Remote == null)
+                var showAll = U.Btn("Btn.Pill", _showAllModels ? "Show fewer" : "Show all", async () =>
                 {
-                    try { await ModelCatalog.FetchRemoteAsync(); }
-                    catch (Exception ex) { W.Toast("Couldn't load the OpenRouter model list: " + ex.Message, true); return; }
-                }
-                _showAllModels = !_showAllModels;
-                Refresh();
-            });
-            showAll.FontSize = 14;
-            showAll.Padding = new Thickness(16, 7, 16, 7);
-            Grid.SetColumn(showAll, 1);
-            footer.Children.Add(showAll);
-            sp.Children.Add(footer);
+                    if (!_showAllModels && ModelCatalog.Remote == null)
+                    {
+                        try { await ModelCatalog.FetchRemoteAsync(); }
+                        catch (Exception ex) { W.Toast("Couldn't load the OpenRouter model list: " + ex.Message, true); return; }
+                    }
+                    _showAllModels = !_showAllModels;
+                    Refresh();
+                });
+                showAll.FontSize = 14;
+                showAll.Padding = new Thickness(16, 7, 16, 7);
+                showAll.HorizontalAlignment = HorizontalAlignment.Right;
+                showAll.Margin = new Thickness(0, 12, 0, 0);
+                sp.Children.Add(showAll);
+            }
+
+            var request = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+            request.Children.Add(new TextBlock { Text = "Missing a model?", Foreground = U.Text2, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
+            var ask = U.Btn("Btn.Link", "Request it", () => OverlayWindow.OpenUrl(RequestModelUrl()));
+            ask.Foreground = U.Text;
+            ask.FontSize = 14;
+            request.Children.Add(ask);
+            sp.Children.Add(request);
             return sp;
+        }
+
+        /// <summary>The website's model request form. Says which plan is asking, and nothing about who.</summary>
+        private string RequestModelUrl()
+        {
+            var plan = W.Billing.IsActive ? W.Billing.Plan : "own_keys";
+            return "https://www.thecloser.tech/request-model?source=app&plan=" + Uri.EscapeDataString(plan);
         }
 
         private void FillGroups(Panel host, IEnumerable<ModelInfo> models)
         {
             foreach (var group in models.GroupBy(m => ModelCatalog.Group(m.Slug)))
             {
-                var gh = U.T(group.Key.ToUpperInvariant(), 12.5, U.Text3, FontWeights.SemiBold);
+                var gh = U.T(group.Key.ToUpperInvariant(), 12.5, U.Text2, FontWeights.SemiBold);
                 gh.Margin = new Thickness(0, host.Children.Count == 0 ? 2 : 14, 0, 6);
                 host.Children.Add(gh);
                 foreach (var m in group)
@@ -495,39 +421,47 @@ namespace TheCloser.Ui
         private FrameworkElement PromptsPage()
         {
             var p = Page();
-            p.Children.Add(H("System prompts", true));
-            p.Children.Add(Sub("The instructions TheCloser follows. Pick one on the setup screen. Every prompt can be edited, duplicated or deleted; an edited built-in can be reset from its Edit window."));
-            var list = new StackPanel();
             var all = Prompts.All(S);
-            for (int i = 0; i < all.Count; i++)
+            var header = new Grid { Margin = new Thickness(0, 0, 0, 14) };
+            header.ColumnDefinitions.Add(new ColumnDefinition());
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var title = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            title.Children.Add(U.T("Prompts", 19, U.Text, FontWeights.SemiBold));
+            title.Children.Add(U.Badge(all.Count.ToString()));
+            header.Children.Add(title);
+            var create = U.Btn("Btn.White", U.IconText(U.GAdd, "New prompt", 8), () => W.EditPrompt(null, Refresh));
+            create.Padding = new Thickness(16, 8, 18, 8);
+            Grid.SetColumn(create, 1);
+            header.Children.Add(create);
+            p.Children.Add(header);
+
+            var list = new StackPanel();
+            foreach (var pr in all)
             {
-                var prompt = all[i];
-                if (i > 0) list.Children.Add(U.Divider(new Thickness(0, 12, 0, 12)));
-                var row = new Grid();
+                var prompt = pr;
+                var row = new Grid { Margin = new Thickness(0, 6, 0, 10) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition());
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var icon = U.Icon(PromptGlyph(prompt.Id), 17, U.Text2);
+                icon.VerticalAlignment = VerticalAlignment.Top;
+                icon.Margin = new Thickness(0, 3, 14, 0);
+                row.Children.Add(icon);
                 var info = new StackPanel();
-                var title = new StackPanel { Orientation = Orientation.Horizontal };
-                title.Children.Add(U.T(prompt.Name, 15.5, prompt.Id == S.PromptId ? U.Green : U.Text, FontWeights.SemiBold));
-                if (Prompts.IsBuiltIn(prompt.Id)) title.Children.Add(U.Badge(Prompts.IsEdited(S, prompt.Id) ? "Built-in, edited" : "Built-in"));
-                info.Children.Add(title);
-                var preview = new TextBlock { Text = prompt.Text.Replace("\n", " "), Foreground = U.Text3, FontSize = 13, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0) };
+                info.Children.Add(U.T(prompt.Name, 16, U.Text));
+                var preview = new TextBlock { Text = prompt.Text.Replace("\n", " "), Foreground = U.Text2, FontSize = 13.5, TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, MaxHeight = 40, Margin = new Thickness(0, 3, 0, 0) };
                 info.Children.Add(preview);
+                Grid.SetColumn(info, 1);
                 row.Children.Add(info);
-                var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-                actions.Children.Add(U.Btn("Btn.Ghost", "Edit", () => W.EditPrompt(prompt, Refresh)));
-                if (Prompts.IsBuiltIn(prompt.Id))
-                    actions.Children.Add(U.Btn("Btn.Ghost", U.Icon(U.GCopy, 13, null), () => W.EditPrompt(new PromptDef { Name = prompt.Name + " (copy)", Text = prompt.Text }, Refresh, true), "Duplicate"));
-                actions.Children.Add(U.Btn("Btn.Ghost", U.Icon(U.GTrash, 13, null), () => W.DeletePrompt(prompt), "Delete"));
-                Grid.SetColumn(actions, 1);
+                var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Top };
+                actions.Children.Add(U.Btn("Btn.Ghost", U.Icon(U.GEdit, 14, null), () => W.EditPrompt(prompt, Refresh), "Edit"));
+                actions.Children.Add(U.Btn("Btn.Ghost", U.Icon(U.GTrash, 14, null), () => W.DeletePrompt(prompt), "Delete"));
+                Grid.SetColumn(actions, 2);
                 row.Children.Add(actions);
                 list.Children.Add(row);
             }
-            p.Children.Add(U.Box(list, new Thickness(22, 18, 22, 18)));
-            var create = U.Btn("Btn.Pill", U.IconText(U.GAdd, "New prompt", 8), () => W.EditPrompt(null, Refresh));
-            create.HorizontalAlignment = HorizontalAlignment.Left;
-            create.Margin = new Thickness(0, 14, 0, 0);
-            p.Children.Add(create);
+            if (all.Count == 0) list.Children.Add(Sub("No saved prompts. Interviews use the default prompt."));
+            p.Children.Add(list);
             if (S.HiddenPrompts.Count > 0)
             {
                 var restore = U.Btn("Btn.Link", "Restore deleted built-in prompts (" + S.HiddenPrompts.Count + ")", () =>
@@ -538,9 +472,66 @@ namespace TheCloser.Ui
                     W.RefreshSetup();
                 });
                 restore.HorizontalAlignment = HorizontalAlignment.Left;
-                restore.Margin = new Thickness(0, 10, 0, 0);
+                restore.Margin = new Thickness(0, 6, 0, 0);
                 p.Children.Add(restore);
             }
+            return p;
+        }
+
+        private static string PromptGlyph(string id)
+        {
+            switch (id)
+            {
+                case "interview": return U.GPerson;
+                case "meeting": return U.GPeople;
+                case "call": return U.GPhone;
+                default: return U.GChat;
+            }
+        }
+
+        // --- Memory ------------------------------------------------------------------------------
+
+        private FrameworkElement MemoryPage()
+        {
+            var p = Page();
+            p.Children.Add(H("Within session", true));
+            var within = new StackPanel();
+            within.Children.Add(SwitchRow("Replay previous turns", "Include prior user/assistant turns as context.", S.ReplayTurns,
+                on => { S.ReplayTurns = on; W.SaveSettingsSoon(); Refresh(); }));
+            var window = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 14, 0, 0), IsEnabled = S.ReplayTurns, Opacity = S.ReplayTurns ? 1 : 0.4 };
+            var allLabel = U.T("All turns", 15, U.Text);
+            allLabel.VerticalAlignment = VerticalAlignment.Center;
+            window.Children.Add(allLabel);
+            var all = new CheckBox { Style = U.Style("Toggle.Switch"), IsChecked = S.ReplayAllTurns, Margin = new Thickness(12, 0, 22, 0) };
+            window.Children.Add(all);
+            var count = U.T("", 15, U.Text);
+            count.VerticalAlignment = VerticalAlignment.Center;
+            count.MinWidth = 70;
+            window.Children.Add(count);
+            var less = U.Circle(U.GRemove, null, "Fewer turns", 11);
+            var more = U.Circle(U.GAdd, null, "More turns", 11);
+            less.Margin = new Thickness(10, 0, 0, 0);
+            more.Margin = new Thickness(6, 0, 0, 0);
+            window.Children.Add(less);
+            window.Children.Add(more);
+            Action sync = delegate
+            {
+                count.Text = S.ReplayTurnCount + (S.ReplayTurnCount == 1 ? " turn" : " turns");
+                count.Opacity = S.ReplayAllTurns ? 0.4 : 1;
+                less.IsEnabled = !S.ReplayAllTurns && S.ReplayTurnCount > 1;
+                more.IsEnabled = !S.ReplayAllTurns && S.ReplayTurnCount < 50;
+            };
+            all.Checked += delegate { S.ReplayAllTurns = true; W.SaveSettingsSoon(); sync(); };
+            all.Unchecked += delegate { S.ReplayAllTurns = false; W.SaveSettingsSoon(); sync(); };
+            less.Click += delegate { S.ReplayTurnCount = Math.Max(1, S.ReplayTurnCount - 1); W.SaveSettingsSoon(); sync(); };
+            more.Click += delegate { S.ReplayTurnCount = Math.Min(50, S.ReplayTurnCount + 1); W.SaveSettingsSoon(); sync(); };
+            sync();
+            within.Children.Add(window);
+            p.Children.Add(Box(within));
+
+            p.Children.Add(H("Across sessions"));
+            p.Children.Add(Box(SwitchRow("Pull from past sessions", "Include one recent turn from recent other sessions.", S.PullPastSessions,
+                on => { S.PullPastSessions = on; W.SaveSettingsSoon(); })));
             return p;
         }
 
@@ -551,25 +542,15 @@ namespace TheCloser.Ui
             var p = Page();
             p.Children.Add(H("Global shortcuts", true));
             var list = new StackPanel();
-            var rows = new[]
-            {
-                new object[] { new[] { "Ctrl", "Alt", "Space" }, "Show / hide overlay" },
-                new object[] { new[] { "Ctrl", "Enter" }, "Get the answer now (during a call)" },
-                new object[] { new[] { "Ctrl", "Shift", "Enter" }, "Screenshot → send to AI (during a call)" },
-                new object[] { new[] { "Ctrl", "Alt", "↑↓←→" }, "Move overlay (while it's showing)" },
-                new object[] { new[] { "Ctrl", "Alt", "Shift", "↑↓←→" }, "Resize overlay" },
-                new object[] { new[] { "Ctrl", "N" }, "New session (when TheCloser is focused)" },
-                new object[] { new[] { "Esc" }, "Stop the answer being written" }
-            };
-            foreach (var r in rows)
+            foreach (var r in OverlayWindow.Shortcuts)
             {
                 var g = new Grid { Margin = new Thickness(0, 5, 0, 5) };
                 g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 g.ColumnDefinitions.Add(new ColumnDefinition());
                 var keys = new StackPanel { Orientation = Orientation.Horizontal };
-                foreach (var k in (string[])r[0]) keys.Children.Add(U.Key(k));
+                foreach (var k in r.Keys) keys.Children.Add(U.Key(k));
                 g.Children.Add(keys);
-                var d = U.T((string)r[1], 15, U.Text2);
+                var d = U.T(r.Description, 15, U.Text2);
                 d.HorizontalAlignment = HorizontalAlignment.Right;
                 d.VerticalAlignment = VerticalAlignment.Center;
                 d.Margin = new Thickness(24, 0, 0, 0);

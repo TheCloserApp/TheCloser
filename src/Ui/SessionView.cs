@@ -8,7 +8,7 @@ using System.Windows.Shapes;
 
 namespace TheCloser.Ui
 {
-    /// <summary>The live call card: recording pill + what's being heard, optional transcript, and the answers.</summary>
+    /// <summary>The live interview card: recording pill + what's being heard, optional transcript, and the answers.</summary>
     internal sealed class SessionView : Grid
     {
         private readonly OverlayWindow W;
@@ -30,6 +30,7 @@ namespace TheCloser.Ui
         private readonly Dictionary<QaItem, ContentControl> _answerHosts = new Dictionary<QaItem, ContentControl>();
         private bool _collapsed;
         private int _renderedTextSize;
+        private string _renderedKeywordStyle;
 
         public bool IsCollapsed { get { return _collapsed; } }
 
@@ -112,7 +113,7 @@ namespace TheCloser.Ui
             _emptyTitle = U.T("Waiting for the first question", 17, U.Text2, FontWeights.SemiBold);
             _emptyTitle.HorizontalAlignment = HorizontalAlignment.Center;
             _emptyTitle.Margin = new Thickness(0, 16, 0, 0);
-            _emptySub = U.T("The answer appears here the moment the caller finishes asking.", 14, U.Text3);
+            _emptySub = U.T("The answer appears here the moment the interviewer finishes asking.", 14, U.Text3);
             _emptySub.HorizontalAlignment = HorizontalAlignment.Center;
             _emptySub.TextAlignment = TextAlignment.Center;
             _emptySub.Margin = new Thickness(0, 6, 0, 0);
@@ -165,10 +166,10 @@ namespace TheCloser.Ui
             _transcriptBtn.Content = U.Icon(U.GList, 15, W.S.ShowTranscript ? U.Blue : null);
 
             if (!Ctl.Active) _emptyTitle.Text = s == null ? "No session" : "No questions in this session";
-            else if (Ctl.Paused) _emptyTitle.Text = "Call paused";
+            else if (Ctl.Paused) _emptyTitle.Text = "Interview paused";
             else _emptyTitle.Text = "Waiting for the first question";
-            _emptySub.Text = Ctl.Active && !Ctl.Paused ? "The answer appears here the moment the caller finishes asking." :
-                Ctl.Active ? "Resume from the … menu when you're ready." : "Press Continue to pick this call back up.";
+            _emptySub.Text = Ctl.Active && !Ctl.Paused ? "The answer appears here the moment the interviewer finishes asking." :
+                Ctl.Active ? "Resume from the … menu when you're ready." : "Press Continue to pick this interview back up.";
             Tick();
             RefreshLayout();
         }
@@ -232,6 +233,7 @@ namespace TheCloser.Ui
             _qaList.Children.Clear();
             _answerHosts.Clear();
             _renderedTextSize = W.S.TextSizePct;
+            _renderedKeywordStyle = W.S.KeywordStyle;
             var qas = s == null ? new List<QaItem>() : (W.S.FocusMode ? s.Qas.Skip(Math.Max(0, s.Qas.Count - 1)).ToList() : s.Qas);
             _empty.Visibility = qas.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             _qaScroll.Visibility = qas.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -254,7 +256,7 @@ namespace TheCloser.Ui
             qi.Margin = new Thickness(0, 1, 10, 0);
             qi.VerticalAlignment = VerticalAlignment.Top;
             q.Children.Add(qi);
-            var qt = U.T(qa.Question, 14.5, U.Text2, FontWeights.SemiBold);
+            var qt = U.T(qa.Question, 14.5 * W.S.TextSizePct / 100.0, U.Text2);
             qt.MaxWidth = 900;
             q.Children.Add(qt);
             sp.Children.Add(q);
@@ -278,11 +280,11 @@ namespace TheCloser.Ui
 
         private void RenderAnswer(QaItem qa, ContentControl host, bool streamingUpdate)
         {
-            double size = 14.5 * W.S.TextSizePct / 100.0;
+            double size = OverlayWindow.AnswerSize(W.S);
             var text = qa.CurrentText;
             bool stick = streamingUpdate && _qaScroll.VerticalOffset >= _qaScroll.ScrollableHeight - 30;
             var panel = new StackPanel();
-            if (text.Length > 0) panel.Children.Add(MarkdownView.Render(text, size));
+            if (text.Length > 0) panel.Children.Add(MarkdownView.Render(text, size, W.S.KeywordStyle));
             if (qa.Streaming && text.Length == 0)
             {
                 var thinking = new StackPanel { Orientation = Orientation.Horizontal };
@@ -315,7 +317,7 @@ namespace TheCloser.Ui
 
         public void OnSettingsChanged()
         {
-            if (_renderedTextSize != W.S.TextSizePct) RefreshQas();
+            if (_renderedTextSize != W.S.TextSizePct || _renderedKeywordStyle != W.S.KeywordStyle) RefreshQas();
             RefreshState();
         }
     }

@@ -32,20 +32,34 @@ namespace TheCloser.Ui
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             Theme.Init(app);
 
-            Scene("pill", 470, 150, delegate(OverlayWindow w) { w.SetPanel(false); });
-            Scene("bar", 470, 150, delegate(OverlayWindow w) { w.SetPanel(false); w.PreviewDockHover(); });
-            Scene("setup", 520, 900, delegate(OverlayWindow w) { w.ShowView("setup"); });
+            // A crash in one screen is logged, not fatal, so the others still render.
+            app.DispatcherUnhandledException += delegate(object o, DispatcherUnhandledExceptionEventArgs e)
+            {
+                _failures++;
+                _log.AppendLine("ERROR " + e.Exception);
+                e.Handled = true;
+            };
+
+            foreach (var step in new[] { OnboardingView.Step.Welcome, OnboardingView.Step.Choose, OnboardingView.Step.Keys, OnboardingView.Step.Plans })
+            {
+                var st = step;
+                Scene("tour-" + st.ToString().ToLowerInvariant(), 520, 820, delegate(OverlayWindow w) { w.ShowTourStep(st); });
+            }
+            Scene("pill", 470, 360, delegate(OverlayWindow w) { w.SetPanel(false); });
+            Scene("bar", 470, 360, delegate(OverlayWindow w) { w.SetPanel(false); w.PreviewDockHover(); });
+            Scene("setup", 520, 1000, delegate(OverlayWindow w) { w.ShowView("setup"); });
             Scene("live", 520, 760, delegate(OverlayWindow w) { w.LoadDemo(); });
             Scene("history", 520, 760, delegate(OverlayWindow w) { w.ShowView("history"); });
-            foreach (var page in new[] { "general", "models", "subscription", "prompts", "shortcuts" })
+            foreach (var page in new[] { "general", "ai", "prompts", "memory", "shortcuts" })
             {
                 var p = page;
-                Scene("settings-" + p, 560, 1100, delegate(OverlayWindow w) { w.ShowSettings(p); });
+                Scene("settings-" + p, 560, 1200, delegate(OverlayWindow w) { w.ShowSettings(p); });
             }
             MenuScene("menu", delegate(OverlayWindow w) { w.LoadDemo(); });
+            CallPromptScene();
 
             _log.AppendLine(_failures == 0 ? "ALL SCREENS RENDERED" : _failures + " SCREEN(S) FAILED");
-            File.WriteAllText(Path.Combine(dir, "render-log.txt"), _log.ToString(), Encoding.UTF8);
+            WriteLog();
             return _failures;
         }
 
@@ -70,6 +84,7 @@ namespace TheCloser.Ui
                 Pump(900); // entrance animations run ~220 ms
                 Save(w, width, height, name);
                 _log.AppendLine("OK    " + name);
+                WriteLog();
             }
             catch (Exception ex)
             {
@@ -110,6 +125,36 @@ namespace TheCloser.Ui
                 if (menu != null) menu.IsOpen = false;
                 if (w != null) try { w.Close(); } catch { }
             }
+        }
+
+        /// <summary>"On a call in Zoom?", drawn on its own.</summary>
+        private static void CallPromptScene()
+        {
+            CallPromptWindow prompt = null;
+            try
+            {
+                prompt = new CallPromptWindow();
+                prompt.ShowFor("Zoom", null);
+                prompt.Left = -30000;
+                Pump(500);
+                Save(prompt, prompt.ActualWidth, prompt.ActualHeight, "call-prompt");
+                _log.AppendLine("OK    call-prompt");
+            }
+            catch (Exception ex)
+            {
+                _failures++;
+                _log.AppendLine("FAIL  call-prompt: " + ex);
+            }
+            finally
+            {
+                if (prompt != null) try { prompt.Close(); } catch { }
+            }
+        }
+
+        /// <summary>Written after every screen, so a crash still leaves a log.</summary>
+        private static void WriteLog()
+        {
+            File.WriteAllText(Path.Combine(_dir, "render-log.txt"), _log.ToString(), Encoding.UTF8);
         }
 
         /// <summary>Runs the dispatcher (layout, bindings, animations) for a while.</summary>

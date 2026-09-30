@@ -8,7 +8,10 @@ using System.Windows.Media;
 
 namespace TheCloser.Ui
 {
-    /// <summary>Renders the Markdown subset Claude uses in answers (headings, bullets, numbers, bold, italic, code) as WPF.</summary>
+    /// <summary>
+    /// Renders the Markdown subset models use in answers (headings, bullets, numbers, bold, italic, code) as WPF.
+    /// Bold spans are the answer's keywords, drawn in the chosen keyword style.
+    /// </summary>
     internal static class MarkdownView
     {
         private static readonly Regex Bullet = new Regex(@"^(\s*)([-*+•])\s+(.*)$");
@@ -16,6 +19,11 @@ namespace TheCloser.Ui
         private static readonly Regex Heading = new Regex(@"^(#{1,6})\s+(.*)$");
 
         public static StackPanel Render(string markdown, double size)
+        {
+            return Render(markdown, size, "bold");
+        }
+
+        public static StackPanel Render(string markdown, double size, string keywordStyle)
         {
             var root = new StackPanel();
             var lines = (markdown ?? "").Replace("\r\n", "\n").Split('\n');
@@ -55,7 +63,7 @@ namespace TheCloser.Ui
                 var m = Heading.Match(trimmed);
                 if (m.Success)
                 {
-                    var tb = Para(m.Groups[2].Value, size * (m.Groups[1].Value.Length <= 2 ? 1.12 : 1.04), top + size * 0.15);
+                    var tb = Para(m.Groups[2].Value, size * (m.Groups[1].Value.Length <= 2 ? 1.12 : 1.04), top + size * 0.15, keywordStyle);
                     tb.FontWeight = FontWeights.Bold;
                     root.Children.Add(tb);
                     continue;
@@ -64,19 +72,19 @@ namespace TheCloser.Ui
                 m = Bullet.Match(line);
                 if (m.Success)
                 {
-                    root.Children.Add(ListItem("•", m.Groups[3].Value, Depth(m.Groups[1].Value), size, top));
+                    root.Children.Add(ListItem("•", m.Groups[3].Value, Depth(m.Groups[1].Value), size, top, keywordStyle));
                     continue;
                 }
                 m = Numbered.Match(line);
                 if (m.Success)
                 {
-                    root.Children.Add(ListItem(m.Groups[2].Value + ".", m.Groups[3].Value, Depth(m.Groups[1].Value), size, top));
+                    root.Children.Add(ListItem(m.Groups[2].Value + ".", m.Groups[3].Value, Depth(m.Groups[1].Value), size, top, keywordStyle));
                     continue;
                 }
 
                 if (trimmed.StartsWith(">"))
                 {
-                    var q = Para(trimmed.TrimStart('>', ' '), size, 0);
+                    var q = Para(trimmed.TrimStart('>', ' '), size, 0, keywordStyle);
                     q.Foreground = U.Text2;
                     root.Children.Add(new Border
                     {
@@ -89,7 +97,7 @@ namespace TheCloser.Ui
                     continue;
                 }
 
-                root.Children.Add(Para(line, size, top));
+                root.Children.Add(Para(line, size, top, keywordStyle));
             }
             if (code != null) root.Children.Add(CodeBlock(code.ToString().TrimEnd('\n'), size));
             return root;
@@ -100,7 +108,7 @@ namespace TheCloser.Ui
             return Math.Min(3, indent.Replace("\t", "  ").Length / 2);
         }
 
-        private static TextBlock Para(string text, double size, double top)
+        private static TextBlock Para(string text, double size, double top, string keywordStyle)
         {
             var tb = new TextBlock
             {
@@ -111,17 +119,17 @@ namespace TheCloser.Ui
                 LineHeight = size * 1.38,
                 Margin = new Thickness(0, top, 0, 0)
             };
-            AddInlines(tb.Inlines, text, size);
+            AddInlines(tb.Inlines, text, size, keywordStyle);
             return tb;
         }
 
-        private static Grid ListItem(string marker, string text, int depth, double size, double top)
+        private static Grid ListItem(string marker, string text, int depth, double size, double top, string keywordStyle)
         {
             var g = new Grid { Margin = new Thickness(depth * size * 1.2, top, 0, 0) };
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(size * (marker.Length > 1 ? 1.5 : 1.05)) });
             g.ColumnDefinitions.Add(new ColumnDefinition());
             var dot = new TextBlock { Text = marker, FontFamily = U.Font, FontSize = size, Foreground = marker.Length > 1 ? U.Text2 : U.Text, LineHeight = size * 1.38 };
-            var body = Para(text, size, 0);
+            var body = Para(text, size, 0, keywordStyle);
             Grid.SetColumn(body, 1);
             g.Children.Add(dot);
             g.Children.Add(body);
@@ -155,16 +163,23 @@ namespace TheCloser.Ui
             };
         }
 
-        /// <summary>Inline spans: **bold**, __bold__, *italic*, `code`.</summary>
-        private static void AddInlines(InlineCollection inlines, string text, double size)
+        /// <summary>Inline spans: **bold** (a keyword, in the keyword style), __bold__, *italic*, `code`.</summary>
+        private static void AddInlines(InlineCollection inlines, string text, double size, string keywordStyle)
         {
+            var keywordFg = KeywordStyles.Foreground(keywordStyle);
+            var keywordBg = KeywordStyles.Background(keywordStyle);
             bool bold = false, italic = false;
             var buf = new StringBuilder();
             Action flush = delegate
             {
                 if (buf.Length == 0) return;
                 var run = new Run(buf.ToString());
-                if (bold) run.FontWeight = FontWeights.Bold;
+                if (bold)
+                {
+                    run.FontWeight = FontWeights.Bold;
+                    if (keywordFg != null) run.Foreground = keywordFg;
+                    if (keywordBg != null) run.Background = keywordBg;
+                }
                 if (italic) run.FontStyle = FontStyles.Italic;
                 inlines.Add(run);
                 buf.Length = 0;
