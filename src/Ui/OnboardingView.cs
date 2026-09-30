@@ -63,6 +63,12 @@ namespace TheCloser.Ui
             RefreshFooter();
         }
 
+        /// <summary>Redraws the current step (the subscription changed).</summary>
+        public void Refresh()
+        {
+            Go(_step);
+        }
+
         // --- Footer ------------------------------------------------------------------------------
 
         private int Index { get { return _step == Step.Welcome ? 0 : _step == Step.Choose ? 1 : 2; } }
@@ -111,7 +117,9 @@ namespace TheCloser.Ui
                     next = delegate { Go(Step.Choose); };
                     break;
             }
-            var primary = U.Btn("Btn.White", label, next);
+            // On the plans step, Subscribe is the main action, so "Use my own keys" is the quieter button.
+            bool quiet = _step == Step.Plans && SubscriptionClient.PurchaseEnabled && !W.Billing.IsActive;
+            var primary = U.Btn(quiet ? "Btn.Pill" : "Btn.White", label, next);
             primary.IsEnabled = _step != Step.Choose || _ownKeys.HasValue;
             _buttons.Children.Add(primary);
         }
@@ -195,7 +203,7 @@ namespace TheCloser.Ui
             p.Children.Add(Option(U.GKey, "Bring your own keys", "Free",
                 "Use your own OpenRouter and ElevenLabs keys. You pay them directly for what you use.", _ownKeys == true,
                 delegate { _ownKeys = true; Go(Step.Choose); }));
-            var managed = Option(null, "We handle everything", W.Billing.IsActive ? "Pro" : "Coming soon",
+            var managed = Option(null, "We handle everything", W.Billing.IsActive || SubscriptionClient.PurchaseEnabled ? "Pro" : "Coming soon",
                 "No keys, no setup. Top models and transcription, managed for you. From $19/month.", _ownKeys == false,
                 delegate { _ownKeys = false; Go(Step.Choose); });
             managed.Margin = new Thickness(0, 12, 0, 0);
@@ -296,8 +304,15 @@ namespace TheCloser.Ui
             if (b.IsActive)
                 Header(p, b.IsTester ? "You have tester access" : "You're on " + (b.Plan == "pro_max" ? "Pro Max" : "Pro"),
                     b.IsTester ? "No keys needed. The test budget is shared by all testers." : "No keys needed. You're ready for your next interview.");
+            else if (SubscriptionClient.PurchaseEnabled)
+                Header(p, "We handle everything", "Checkout opens in your browser. The app switches over once it's paid.");
             else
                 Header(p, "We handle everything", "Coming soon. Until then, it's free with your own keys.");
+            if (!b.IsActive && SubscriptionClient.PurchaseEnabled)
+            {
+                p.Children.Add(ProViews.PlanPicker(W, delegate { Go(Step.Plans); }));
+                return p;
+            }
             p.Children.Add(ProViews.PlanCards(W));
             if (!b.IsActive)
             {

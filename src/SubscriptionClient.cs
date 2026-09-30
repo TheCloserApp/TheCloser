@@ -23,6 +23,9 @@ namespace TheCloser
     internal sealed class SubscriptionClient
     {
         internal const string ApiBase = "https://www.thecloser.tech/api/";
+
+        /// <summary>Subscribe buttons in the app. Off shows the plans as "coming soon" (the tester code still works).</summary>
+        public const bool PurchaseEnabled = true;
         private static readonly HttpClient DefaultHttp = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(30) };
         private readonly AppSettings S;
         private readonly HttpClient Http;
@@ -291,6 +294,13 @@ namespace TheCloser
             var zeroDecimal = new[] { "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "VND", "VUV", "XAF", "XOF", "XPF" };
             var amount = zeroDecimal.Contains(currency) ? minor.ToString(CultureInfo.InvariantCulture) : (minor / 100m).ToString("0.00", CultureInfo.InvariantCulture);
             return currency + " " + amount + (count == 1 ? " / month" : " / " + count + " months");
+        }
+
+        /// <summary>"Cancel" on "Finish checkout in your browser": stops waiting for this checkout.</summary>
+        public void StopWaitingForCheckout()
+        {
+            ClearCheckout();
+            Changed();
         }
 
         private async Task EnsureActiveAsync(CancellationToken ct)

@@ -84,6 +84,8 @@ namespace TheCloser.Ui
         private readonly DispatcherTimer _billingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private DateTime _billingChecked;
         private DateTime _checkoutWatchUntil = DateTime.UtcNow.AddMinutes(10);
+        /// <summary>Waiting for "Upgrade to Pro Max" to be confirmed in the browser.</summary>
+        internal bool WaitingForUpgrade { get; private set; }
         private bool _billingRefreshing, _closed;
         private bool _modalOpen;
         private readonly HashSet<int> _registered = new HashSet<int>();
@@ -139,14 +141,17 @@ namespace TheCloser.Ui
                         S.Model = Billing.Models[0];
                         SaveSettingsSoon();
                     }
+                    if (WaitingForUpgrade && Billing.Plan == "pro_max") WaitingForUpgrade = false;
                     if (_view == "settings") _settings.Refresh();
+                    if (_view == "tour") _tour.Refresh();
                     OnKeysChanged();
                 });
             };
             _billingTimer.Tick += async delegate
             {
                 if (!S.UseSubscription && !Billing.PendingCheckout) return;
-                var interval = Billing.PendingCheckout && DateTime.UtcNow < _checkoutWatchUntil ? TimeSpan.FromSeconds(15) : TimeSpan.FromMinutes(45);
+                bool waiting = (Billing.PendingCheckout || WaitingForUpgrade) && DateTime.UtcNow < _checkoutWatchUntil;
+                var interval = waiting ? TimeSpan.FromSeconds(15) : TimeSpan.FromMinutes(45);
                 if (DateTime.UtcNow - _billingChecked >= interval) await RefreshBillingAsync();
             };
             if (!Offscreen)
@@ -476,6 +481,63 @@ namespace TheCloser.Ui
         {
             _checkoutWatchUntil = DateTime.UtcNow.AddMinutes(10);
             _billingChecked = DateTime.MinValue;
+        }
+
+        /// <summary>A plan's Subscribe button: Stripe Checkout opens in the browser, and the app switches over once it's paid.</summary>
+        public async void Subscribe(string plan)
+        {
+            S.UseSubscription = true;
+            SaveSettingsSoon();
+            try
+            {
+                OpenUrl(await Billing.CheckoutAsync(plan));
+                WatchCheckout();
+            }
+            catch (Exception ex) { Toast(ex.Message, true); }
+            RefreshBillingViews();
+        }
+
+        /// <summary>"Already subscribed on this PC? Restore": looks the subscription up again.</summary>
+        public async void RestoreSubscription()
+        {
+            S.UseSubscription = true;
+            SaveSettingsSoon();
+            await RefreshBillingAsync();
+            if (!Billing.IsActive) Toast("No subscription was found for this PC.", true);
+            RefreshBillingViews();
+        }
+
+        public void StopWaitingForCheckout()
+        {
+            Billing.StopWaitingForCheckout();
+            WaitingForUpgrade = false;
+            RefreshBillingViews();
+        }
+
+        /// <summary>"Upgrade to Pro Max": Stripe shows the prorated charge; the app switches once it's confirmed.</summary>
+        public async void UpgradeToProMax()
+        {
+            try
+            {
+                OpenUrl(await Billing.UpgradeAsync());
+                WaitingForUpgrade = true;
+                WatchCheckout();
+            }
+            catch (Exception ex) { Toast(ex.Message, true); }
+            RefreshBillingViews();
+        }
+
+        /// <summary>"Manage subscription": Stripe's billing page (plan, card, invoices, cancel).</summary>
+        public async void ManageSubscription()
+        {
+            try { OpenUrl(await Billing.PortalAsync()); }
+            catch (Exception ex) { Toast(ex.Message, true); }
+        }
+
+        private void RefreshBillingViews()
+        {
+            if (_view == "settings") _settings.Refresh();
+            if (_view == "tour") _tour.Refresh();
         }
 
         private void RefreshTopBar()

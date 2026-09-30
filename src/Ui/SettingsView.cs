@@ -299,26 +299,51 @@ namespace TheCloser.Ui
                 p.Children.Add(H(b.IsTester ? plan + " · Tester" : plan, true));
                 p.Children.Add(Sub(b.IsTester
                     ? "Tester access, from a budget shared by all testers. Thanks for helping!"
-                    : "No keys needed: the models and transcription are included."));
+                    : "Models and transcription included. Tied to this PC."));
                 var box = new StackPanel();
                 box.Children.Add(ProViews.UsageMeter(b));
-                if (!b.IsTester && b.CanManageBilling)
+                // Testers have no subscription to manage or upgrade.
+                if (!b.IsTester)
                 {
-                    var manage = U.Btn("Btn.Pill", "Manage subscription", async delegate
+                    box.Children.Add(ActionRow("Change plan, card, or cancel.", U.Btn("Btn.Pill", "Manage subscription", W.ManageSubscription)));
+                    if (b.Plan == "pro")
                     {
-                        try { OverlayWindow.OpenUrl(await b.PortalAsync()); }
-                        catch (Exception ex) { W.Toast(ex.Message, true); }
-                    });
-                    manage.HorizontalAlignment = HorizontalAlignment.Left;
-                    manage.Margin = new Thickness(0, 14, 0, 0);
-                    box.Children.Add(manage);
+                        box.Children.Add(U.Divider(new Thickness(0, 14, 0, 0)));
+                        box.Children.Add(W.WaitingForUpgrade
+                            ? ActionRow("Confirm in your browser. This updates once it's done.", U.Btn("Btn.Ghost", "Cancel", W.StopWaitingForCheckout))
+                            : ActionRow("Pro Max: the most powerful models and 2.5× the usage.", U.Btn("Btn.White", "Upgrade to Pro Max", W.UpgradeToProMax)));
+                    }
                 }
                 p.Children.Add(Box(box));
+                return;
+            }
+            if (SubscriptionClient.PurchaseEnabled)
+            {
+                p.Children.Add(H("TheCloser Pro", true));
+                p.Children.Add(Sub("No keys: we run the models and transcription."));
+                p.Children.Add(ProViews.PlanPicker(W, Refresh));
                 return;
             }
             p.Children.Add(H("TheCloser Pro", true));
             p.Children.Add(Sub("Coming soon: no keys, with the models and transcription included."));
             p.Children.Add(Box(ProViews.TesterCodeEntry(W, Refresh)));
+        }
+
+        /// <summary>A line of explanation with its button on the right ("Change plan, card, or cancel." [Manage subscription]).</summary>
+        private static Grid ActionRow(string text, Button action)
+        {
+            var g = new Grid { Margin = new Thickness(0, 14, 0, 0) };
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var t = U.T(text, 13.5, U.Text2);
+            t.VerticalAlignment = VerticalAlignment.Center;
+            t.Margin = new Thickness(0, 0, 14, 0);
+            g.Children.Add(t);
+            action.FontSize = 14;
+            action.Padding = new Thickness(14, 7, 14, 7);
+            Grid.SetColumn(action, 1);
+            g.Children.Add(action);
+            return g;
         }
 
         private FrameworkElement ModelList()
