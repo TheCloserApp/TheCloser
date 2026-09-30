@@ -106,7 +106,13 @@ namespace TheCloser
                 handler.Responses.Enqueue(Reply(200, testerPass));
                 billing.RedeemAsync("closer-test").GetAwaiter().GetResult();
                 check(billing.IsActive && billing.IsTester && settings.UseSubscription, "a tester code turns on Pro on the test budget");
-                check(settings.EffectiveTranscription == "LiveCaptions" && settings.MissingKeys.Count == 0, "Pro needs no keys and transcribes on this PC");
+                check(settings.EffectiveTranscription == "ProGrok" && settings.MissingKeys.Count == 0, "Pro needs no keys and transcribes with Grok");
+                handler.Responses.Enqueue(Reply(200, Json.Obj("token", "short-lived-token", "expiresAt", 1900000000, "model", "grok-voice-transcribe-2.0")));
+                check(billing.SttTokenAsync().GetAwaiter().GetResult() == "short-lived-token", "Pro gets a short-lived Grok token");
+                check(handler.Paths.Last() == "/api/stt-token" && handler.Auth.Last() == "Bearer test-signed-pass" && handler.Devices.Last() == billing.DeviceId,
+                    "the token request carries the pass and the device");
+                handler.Responses.Enqueue(Reply(503, Json.Obj("error", "stt_not_configured")));
+                check(billing.SttTokenAsync().GetAwaiter().GetResult() == null, "no xAI on the server: no token, so Pro falls back to on-device");
                 handler.Responses.Enqueue(Reply(402, Json.Obj("error", "no_subscription")));
                 billing.RefreshAsync().GetAwaiter().GetResult();
                 check(!billing.IsActive && !billing.IsTester, "tester access ends when testing does");

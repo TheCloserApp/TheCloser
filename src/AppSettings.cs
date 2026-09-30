@@ -147,16 +147,16 @@ namespace TheCloser
         [ScriptIgnore] public bool CaptureSystem { get { return AudioSource != "Mic"; } }
 
         /// <summary>
-        /// The transcription engine actually used. Pro transcribes on this PC; a cloud engine without its key falls back
-        /// to Windows Live Captions; "Automatic" prefers ElevenLabs, then Grok. Same rules as the Mac app, except that
-        /// Live Captions needs Windows 11, so on older Windows Pro uses your own speech key if you've added one.
+        /// The transcription engine actually used. Pro transcribes the interviewer with Grok on TheCloser's xAI account
+        /// ("ProGrok"); a cloud engine without its key falls back to Windows Live Captions; "Automatic" prefers
+        /// ElevenLabs, then Grok. Same rules as the Mac app.
         /// </summary>
         [ScriptIgnore]
         public string EffectiveTranscription
         {
             get
             {
-                if (UseSubscription && SubscriptionClient.HasActivePass(this) && LiveCaptionsSource.IsAvailable) return "LiveCaptions";
+                if (UseSubscription && SubscriptionClient.HasActivePass(this)) return "ProGrok";
                 switch (Transcription)
                 {
                     case "LiveCaptions": return "LiveCaptions";

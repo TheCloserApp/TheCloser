@@ -52,9 +52,17 @@ namespace TheCloser
 
         protected override Uri BuildUri() { return new Uri(BuildUrl(_s)); }
 
-        protected override void Authorize(ClientWebSocket ws)
+        protected override void Authorize(ClientWebSocket ws, string key)
         {
-            ws.Options.SetRequestHeader("Authorization", "Bearer " + ApiKey);
+            ws.Options.SetRequestHeader("Authorization", "Bearer " + key);
+        }
+
+        /// <summary>Pro: fetches a short-lived token from TheCloser's server before each connection (each lasts minutes).</summary>
+        internal Func<Task<string>> TokenProvider;
+
+        protected override Task<string> ConnectKeyAsync()
+        {
+            return TokenProvider != null ? TokenProvider() : base.ConnectKeyAsync();
         }
 
         protected override Task SendAudioAsync(ClientWebSocket ws, byte[] pcm, CancellationToken ct)

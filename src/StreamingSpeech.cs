@@ -49,7 +49,16 @@ namespace TheCloser
         protected abstract string Provider { get; }
         protected abstract string ApiKey { get; }
         protected abstract Uri BuildUri();
-        protected abstract void Authorize(ClientWebSocket ws);
+        protected abstract void Authorize(ClientWebSocket ws, string key);
+
+        /// <summary>The credential for the next connection: the API key, or (Pro) a fresh short-lived token.</summary>
+        protected virtual Task<string> ConnectKeyAsync()
+        {
+            return Task.FromResult(ApiKey);
+        }
+
+        /// <summary>Pro listens to the interviewer only (one stream), unless you picked the microphone alone.</summary>
+        internal bool InterviewerOnly;
         protected abstract Task SendAudioAsync(ClientWebSocket ws, byte[] pcm, CancellationToken ct);
         /// <summary>Asks for the final transcript of whatever was said before closing.</summary>
         protected abstract Task FinishAsync(ClientWebSocket ws, CancellationToken ct);
@@ -62,8 +71,10 @@ namespace TheCloser
         {
             _cts = new CancellationTokenSource();
             RaiseStatus("Connecting to " + Name + "...");
-            if (_s.CaptureSystem) AddChannel("Them", true);
-            if (_s.CaptureMic) AddChannel("Me", false);
+            bool system = _s.CaptureSystem, mic = _s.CaptureMic;
+            if (InterviewerOnly && system) mic = false;
+            if (system) AddChannel("Them", true);
+            if (mic) AddChannel("Me", false);
         }
 
         private void AddChannel(string speaker, bool loopback)
@@ -151,11 +162,12 @@ namespace TheCloser
         /// <summary>One WebSocket session. Returns true if it connected and streamed (so a reconnect is routine).</summary>
         private async Task<bool> Session(Channel ch, CancellationToken ct)
         {
-            if (string.IsNullOrEmpty(ApiKey)) throw new InvalidOperationException("Add your " + Provider + " API key in Settings > AI.");
+            var key = await ConnectKeyAsync().ConfigureAwait(false);
+            if (string.IsNullOrEmpty(key)) throw new InvalidOperationException("Add your " + Provider + " API key in Settings > AI.");
 
             using (var ws = new ClientWebSocket())
             {
-                Authorize(ws);
+                Authorize(ws, key);
                 ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
                 using (var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
                 {
@@ -175,7 +187,7 @@ namespace TheCloser
 
                 lock (ch.Lock) ch.Pending.SetLength(0); // drop audio captured while connecting
                 if (Interlocked.Increment(ref _connected) == 1 || ch.Speaker == "Them")
-                    RaiseStatus("Listening via " + Name + (_s.CaptureMic && _s.CaptureSystem ? " (you + them)" : ""));
+                    RaiseStatus("Listening via " + Name + (_s.CaptureMic && _s.CaptureSystem && !InterviewerOnly ? " (you + them)" : ""));
 
                 var clock = Stopwatch.StartNew();
                 long sent = 0; // samples
@@ -289,7 +301,7 @@ namespace TheCloser
                 using (var ws = new ClientWebSocket())
                 using (var cts = new CancellationTokenSource(15000))
                 {
-                    source.Authorize(ws);
+                    source.Authorize(ws, source.ApiKey);
                     await ws.ConnectAsync(source.BuildUri(), cts.Token).ConfigureAwait(false);
                     var ready = new TaskCompletionSource<bool>();
                     string error = null;
@@ -331,9 +343,9 @@ namespace TheCloser
 
         protected override Uri BuildUri() { return new Uri(BuildUrl(_s)); }
 
-        protected override void Authorize(ClientWebSocket ws)
+        protected override void Authorize(ClientWebSocket ws, string key)
         {
-            ws.Options.SetRequestHeader("xi-api-key", ApiKey);
+            ws.Options.SetRequestHeader("xi-api-key", key);
         }
 
         internal static string AudioMessage(byte[] pcm, bool commit)

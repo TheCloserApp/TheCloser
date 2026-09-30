@@ -169,6 +169,7 @@ namespace TheCloser.Ui
             if (_src != null) return;
             ITranscriptSource src;
             var engine = S.EffectiveTranscription;
+            if (engine == "ProGrok") { StartProSource(); return; }
             if (engine == "ElevenLabs") src = new ElevenLabsStreamingSource(S.Clone());
             else if (engine == "Grok") src = new GrokStreamingSource(S.Clone());
             else
@@ -176,6 +177,41 @@ namespace TheCloser.Ui
                 if (!LiveCaptionsSource.IsAvailable) { Say("Windows Live Captions isn't available on this PC. Add an ElevenLabs key in Settings > AI.", true); return; }
                 src = new LiveCaptionsSource();
             }
+            Attach(src);
+        }
+
+        private int _proStart;   // a newer start (or a stop) makes an older token fetch stand down
+
+        /// <summary>
+        /// Pro: Grok Transcribe 2 on a short-lived token from TheCloser's server, listening to the interviewer only (one
+        /// stream) unless you picked the microphone alone. Without a token it uses Windows Live Captions instead.
+        /// </summary>
+        private async void StartProSource()
+        {
+            int attempt = ++_proStart;
+            var billing = Billing;
+            var token = billing == null ? null : await billing.SttTokenAsync();
+            if (attempt != _proStart || _src != null || !Active || Paused) return;
+            ITranscriptSource src;
+            if (token != null)
+            {
+                bool first = true;
+                var grok = new GrokStreamingSource(S.Clone()) { InterviewerOnly = true };
+                // The first connection uses the token already fetched; reconnects fetch a fresh one.
+                grok.TokenProvider = delegate
+                {
+                    if (first) { first = false; return Task.FromResult(token); }
+                    return billing.SttTokenAsync();
+                };
+                src = grok;
+            }
+            else if (LiveCaptionsSource.IsAvailable) src = new LiveCaptionsSource();
+            else { Say("Pro transcription isn't available right now. Try again in a moment.", true); return; }
+            Attach(src);
+        }
+
+        private void Attach(ITranscriptSource src)
+        {
             src.Transcript += ev => D.BeginInvoke((Action)(() => OnTranscript(ev)));
             src.Status += st => D.BeginInvoke((Action)(() => Say(st, LooksLikeProblem(st))));
             src.Activity += (speaker, on) => D.BeginInvoke((Action)(() => OnActivity(speaker, on)));
@@ -193,6 +229,7 @@ namespace TheCloser.Ui
 
         private void StopSource()
         {
+            _proStart++;
             var src = _src;
             _src = null;
             Partials.Clear();

@@ -173,6 +173,23 @@ namespace TheCloser
             Changed();
         }
 
+        /// <summary>
+        /// A token for Grok transcription that lasts a few minutes: Pro (subscribers and testers) transcribes the
+        /// interviewer with Grok Transcribe 2 without the app ever holding our xAI key. Null when the server has no xAI
+        /// set up or refuses; Pro then transcribes with Windows Live Captions.
+        /// </summary>
+        public async Task<string> SttTokenAsync()
+        {
+            try
+            {
+                await EnsureActiveAsync(CancellationToken.None).ConfigureAwait(false);
+                var response = await SendAsync("stt-token", Json.Obj(), S.SubscriptionPass, CancellationToken.None).ConfigureAwait(false);
+                var token = Json.Str(response, "token");
+                return string.IsNullOrEmpty(token) ? null : token;
+            }
+            catch (Exception) { return null; }
+        }
+
         public async Task<string> CheckoutAsync(string plan)
         {
             if (plan != "pro" && plan != "pro_max") throw new ArgumentException("Choose Pro or Pro Max.", "plan");
