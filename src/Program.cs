@@ -21,6 +21,8 @@ namespace TheCloser
 
             if (args.Length > 0 && args[0] == "--selftest")
                 return SelfTest.Run(args);
+            if (args.Length > 1 && args[0] == "--render")
+                return Ui.RenderShots.Run(args[1]);
             if (args.Length > 1 && args[0] == "--write-icon")
             {
                 Brand.WriteIcon(args[1]);

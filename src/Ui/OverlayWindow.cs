@@ -32,6 +32,8 @@ namespace TheCloser.Ui
         public readonly SubscriptionClient Billing;
         private readonly bool _forceCapturable;
         internal static bool StealthOn;
+        /// <summary>Drawn to images by `--render`: no tray icon, hotkeys, call detector or billing checks, and closing doesn't quit.</summary>
+        internal static bool Offscreen;
 
         private readonly Grid _root = new Grid();
         private RowDefinition _rowCard, _rowFill;
@@ -88,7 +90,7 @@ namespace TheCloser.Ui
             S = settings;
             _forceCapturable = forceCapturable;
             StealthOn = S.HideFromCapture && !forceCapturable;
-            Billing = new SubscriptionClient(S);
+            Billing = Offscreen ? new SubscriptionClient(S, new System.Net.Http.HttpClient(), false) : new SubscriptionClient(S);
             Ctl = new SessionController(S, Dispatcher, Billing);
 
             Title = "TheCloser";
@@ -143,10 +145,13 @@ namespace TheCloser.Ui
                 var interval = Billing.PendingCheckout && DateTime.UtcNow < _checkoutWatchUntil ? TimeSpan.FromSeconds(15) : TimeSpan.FromMinutes(45);
                 if (DateTime.UtcNow - _billingChecked >= interval) await RefreshBillingAsync();
             };
-            _billingTimer.Start();
-            Loaded += async delegate { if (S.UseSubscription || Billing.PendingCheckout) await RefreshBillingAsync(); };
+            if (!Offscreen)
+            {
+                _billingTimer.Start();
+                Loaded += async delegate { if (S.UseSubscription || Billing.PendingCheckout) await RefreshBillingAsync(); };
+            }
 
-            _tick.Tick += delegate { if (_view == "session") _session.Tick(); UpdateHover(); };
+            _tick.Tick += delegate { if (_view == "session") _session.Tick(); if (!Offscreen) UpdateHover(); };
             _tick.Start();
             _saveTimer.Tick += delegate { _saveTimer.Stop(); S.Save(); };
 
@@ -155,8 +160,11 @@ namespace TheCloser.Ui
             IsVisibleChanged += delegate { UpdateHotkeys(); };
             Closing += delegate { OnClosing(); };
 
-            BuildTray();
-            if (S.OfferOnCall) StartCallDetector();
+            if (!Offscreen)
+            {
+                BuildTray();
+                if (S.OfferOnCall) StartCallDetector();
+            }
             ShowView("setup");
             SetPanel(false); // start as just the capsule; the dock opens the panel
         }
@@ -184,7 +192,7 @@ namespace TheCloser.Ui
             _root.RowDefinitions.Add(_rowFill);
 
             // Title bar -------------------------------------------------------------------------
-            _topBrush = new SolidColorBrush(U.C(0xFF1B1B1D));
+            _topBrush = new SolidColorBrush(U.C(0xFF111111));
             var topGrid = new Grid();
             topGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             topGrid.ColumnDefinitions.Add(new ColumnDefinition());
@@ -206,7 +214,7 @@ namespace TheCloser.Ui
             _top = new Border
             {
                 Background = _topBrush,
-                BorderBrush = U.B(0xFF2A2A2D),
+                BorderBrush = U.B(0xFF262626),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(24),
                 Padding = new Thickness(9, 8, 9, 8),
@@ -218,7 +226,7 @@ namespace TheCloser.Ui
             _root.Children.Add(_top);
 
             // Content card ------------------------------------------------------------------------
-            _cardBrush = new SolidColorBrush(U.C(0xFF161618));
+            _cardBrush = new SolidColorBrush(U.C(0xFF111111));
             _cardGrid.Children.Add(_viewHost);
             _cardGrid.Children.Add(_toasts);
             _cardGrid.Children.Add(_modalLayer);
@@ -226,7 +234,7 @@ namespace TheCloser.Ui
             _card = new Border
             {
                 Background = _cardBrush,
-                BorderBrush = U.B(0xFF28282B),
+                BorderBrush = U.B(0xFF262626),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(21),
                 Child = _cardGrid,
@@ -238,7 +246,7 @@ namespace TheCloser.Ui
             // Dock ------------------------------------------------------------------------------
             // A round capsule with the waveform mark. Hovering slides it open to the nav buttons (or the Ask box
             // during a call); the monitor button opens the panel above it.
-            _dockBrush = new SolidColorBrush(U.C(0xFF141416));
+            _dockBrush = new SolidColorBrush(U.C(0xFF111111));
             var logo = new Border { Width = 46, Height = 46, CornerRadius = new CornerRadius(23), Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = "TheCloser", Child = U.WaveLogo(22, U.Text) };
             logo.MouseLeftButtonDown += delegate(object o, MouseButtonEventArgs e)
             {
@@ -258,13 +266,13 @@ namespace TheCloser.Ui
             _dockMore = new Grid { VerticalAlignment = VerticalAlignment.Center };
             _dockMore.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             _dockMore.ColumnDefinitions.Add(new ColumnDefinition());
-            var sep = new Border { Width = 1, Height = 28, Background = U.B(0xFF303034), Margin = new Thickness(8, 0, 12, 0) };
+            var sep = new Border { Width = 1, Height = 28, Background = U.B(0xFF2A2A2A), Margin = new Thickness(8, 0, 12, 0) };
             _dockMore.Children.Add(sep);
 
             _dockAsk = new Grid();
             _dockAsk.ColumnDefinitions.Add(new ColumnDefinition());
             _dockAsk.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            _ask = new TextBox { Style = U.Style("Text.Input"), Tag = "Ask anything", FontSize = 15, Padding = new Thickness(14, 9, 14, 9), Background = U.B(0xFF0D0D0F), BorderBrush = U.B(0xFF2A2A2E), VerticalAlignment = VerticalAlignment.Center };
+            _ask = new TextBox { Style = U.Style("Text.Input"), Tag = "Ask anything", FontSize = 15, Padding = new Thickness(14, 9, 14, 9), Background = U.B(0xFF0A0A0A), BorderBrush = U.B(0xFF292929), VerticalAlignment = VerticalAlignment.Center };
             _ask.KeyDown += delegate(object o, KeyEventArgs e) { if (e.Key == Key.Enter) { e.Handled = true; SendAsk(); } };
             _ask.TextChanged += delegate { _send.Tag = _ask.Text.Trim().Length > 0 ? "ready" : null; };
             _dockAsk.Children.Add(_ask);
@@ -293,7 +301,7 @@ namespace TheCloser.Ui
             _dock = new Border
             {
                 Background = _dockBrush,
-                BorderBrush = U.B(0xFF2C2C30),
+                BorderBrush = U.B(0xFF292929),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(30),
                 Padding = new Thickness(6),
@@ -336,8 +344,8 @@ namespace TheCloser.Ui
                 Width = 32,
                 Height = 32,
                 CornerRadius = new CornerRadius(10),
-                Background = U.B(0xFF1B1B1E),
-                BorderBrush = U.B(0xFF2E2E32),
+                Background = U.B(0xFF1A1A1A),
+                BorderBrush = U.B(0xFF292929),
                 BorderThickness = new Thickness(1),
                 Child = arrows,
                 Cursor = Cursors.SizeNWSE,
@@ -616,6 +624,14 @@ namespace TheCloser.Ui
 
         private void ShowMoreMenu()
         {
+            var menu = BuildMoreMenu();
+            menu.PlacementTarget = _moreBtn;
+            menu.Placement = PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+
+        internal ContextMenu BuildMoreMenu()
+        {
             var menu = new ContextMenu();
             if (Ctl.Current != null)
             {
@@ -670,9 +686,16 @@ namespace TheCloser.Ui
                 _moreMenuOpen = false;
                 if (looksChanged && _view == "settings") _settings.Refresh(); // its sliders show the old values
             };
-            menu.PlacementTarget = _moreBtn;
-            menu.Placement = PlacementMode.Bottom;
-            menu.IsOpen = true;
+            return menu;
+        }
+
+        internal Button MoreButton { get { return _moreBtn; } }
+
+        /// <summary>Slides the capsule open as if hovered (`--render`).</summary>
+        internal void PreviewDockHover()
+        {
+            _dockHover = true;
+            UpdateDockExpansion(true);
         }
 
         private static MenuItem Item(string header, Action click)
@@ -993,6 +1016,7 @@ namespace TheCloser.Ui
 
         public void SaveSettingsSoon()
         {
+            if (Offscreen) return;
             _saveTimer.Stop();
             _saveTimer.Start();
         }
@@ -1112,9 +1136,9 @@ namespace TheCloser.Ui
         {
             Opacity = Math.Max(0.3, S.OpacityPct / 100.0);
             byte a = (byte)Math.Round(255.0 * Math.Max(20, Math.Min(100, S.BackgroundPct)) / 100.0);
-            SetBgAlpha(_topBrush, 0x1B1B1D, a);
-            SetBgAlpha(_cardBrush, 0x161618, a);
-            SetBgAlpha(_dockBrush, 0x141416, a);
+            SetBgAlpha(_topBrush, 0x111111, a);
+            SetBgAlpha(_cardBrush, 0x111111, a);
+            SetBgAlpha(_dockBrush, 0x111111, a);
             if (_session != null) _session.OnSettingsChanged();
         }
 
@@ -1210,7 +1234,7 @@ namespace TheCloser.Ui
             }
             return new Border
             {
-                Background = U.B(0xFF161618),
+                Background = U.B(0xFF111111),
                 BorderBrush = U.Border,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(18),
@@ -1377,7 +1401,7 @@ namespace TheCloser.Ui
 
         private void UpdateHotkeys()
         {
-            if (_hwnd == IntPtr.Zero) return;
+            if (_hwnd == IntPtr.Zero || Offscreen) return;
             Register(HkToggle, Native.MOD_CONTROL | Native.MOD_ALT, VK_SPACE, true);
             if (IsVisible)
             {
@@ -1516,15 +1540,18 @@ namespace TheCloser.Ui
             _billingTimer.Stop();
             try { if (_calls != null) _calls.Dispose(); } catch { }
             try { Ctl.End(); } catch { }
-            SaveBounds();
-            S.Save();
+            if (!Offscreen)
+            {
+                SaveBounds();
+                S.Save();
+            }
             if (_hwnd != IntPtr.Zero)
                 foreach (var id in _registered.ToList()) Native.UnregisterHotKey(_hwnd, id);
             _registered.Clear();
             _tick.Stop();
             if (_tray != null) { _tray.Visible = false; _tray.Dispose(); _tray = null; }
             var app = Application.Current;
-            if (app != null) app.Shutdown();
+            if (app != null && !Offscreen) app.Shutdown();
         }
 
         private bool _trayHintShown;

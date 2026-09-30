@@ -43,7 +43,7 @@ namespace TheCloser.Ui
             AddRail("subscription", U.Icon(U.GPerson, 17, null), "Subscription");
             AddRail("prompts", U.Icon(U.GChat, 17, null), "Prompts");
             AddRail("shortcuts", U.Icon(U.GKeyboard, 17, null), "Shortcuts");
-            Children.Add(new Border { Background = U.B(0xFF121214), CornerRadius = new CornerRadius(18, 0, 0, 18), Child = _railPanel });
+            Children.Add(new Border { Background = U.B(0xFF181818), CornerRadius = new CornerRadius(18, 0, 0, 18), Child = _railPanel });
 
             var divider = new Border { Width = 1, Background = U.Line };
             SetColumn(divider, 1);

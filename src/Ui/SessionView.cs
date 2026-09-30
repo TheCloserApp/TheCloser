@@ -93,7 +93,7 @@ namespace TheCloser.Ui
             _transcriptScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 150, Content = _transcriptLines };
             _transcriptPanel = new Border
             {
-                Background = U.B(0xFF111113),
+                Background = U.B(0xFF0A0A0A),
                 Padding = new Thickness(20, 10, 14, 10),
                 Child = _transcriptScroll,
                 BorderBrush = U.Line,

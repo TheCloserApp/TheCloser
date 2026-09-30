@@ -215,6 +215,14 @@ namespace TheCloser
             TextSizePct = Math.Max(75, Math.Min(200, TextSizePct));
         }
 
+        /// <summary>Default settings, never read from or written to disk (`--render`).</summary>
+        internal static AppSettings Defaults()
+        {
+            var d = new AppSettings();
+            d.Normalize();
+            return d;
+        }
+
         public static AppSettings Load()
         {
             MoveFromOldName();

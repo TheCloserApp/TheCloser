@@ -16,22 +16,22 @@ namespace TheCloser.Ui
         public static readonly FontFamily Icons = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
         public static readonly FontFamily Mono = new FontFamily("Cascadia Mono, Consolas");
 
-        public static readonly SolidColorBrush Text = B(0xFFF2F2F4);
-        public static readonly SolidColorBrush Text2 = B(0xFFA1A1A8);
-        public static readonly SolidColorBrush Text3 = B(0xFF6C6C72);
-        public static readonly SolidColorBrush Line = B(0xFF26262A);
-        public static readonly SolidColorBrush Border = B(0xFF2A2A2D);
-        public static readonly SolidColorBrush Inner = B(0xFF1D1D20);
-        public static readonly SolidColorBrush Green = B(0xFF23B27E);
-        public static readonly SolidColorBrush Blue = B(0xFF0A84FF);
+        public static readonly SolidColorBrush Text = B(0xFFEDEDED);
+        public static readonly SolidColorBrush Text2 = B(0xFFA1A1A1);
+        public static readonly SolidColorBrush Text3 = B(0xFF808080);
+        public static readonly SolidColorBrush Line = B(0xFF222222);
+        public static readonly SolidColorBrush Border = B(0xFF262626);
+        public static readonly SolidColorBrush Inner = B(0xFF1A1A1A);
+        public static readonly SolidColorBrush Green = B(0xFF34C759);
+        public static readonly SolidColorBrush Blue = B(0xFF3B8EFF);
         public static readonly SolidColorBrush Red = B(0xFFFF453A);
         public static readonly SolidColorBrush RecText = B(0xFFFF6A61);
         public static readonly SolidColorBrush RecBg = B(0xFF3B1718);
-        public static readonly SolidColorBrush Amber = B(0xFFF5A524);
+        public static readonly SolidColorBrush Amber = B(0xFFFF9F0A);
         public static readonly SolidColorBrush WarnBg = B(0xFF2D2313);
         public static readonly SolidColorBrush WarnBorder = B(0xFF5C4617);
         public static readonly SolidColorBrush CodeBg = B(0xFF0F0F11);
-        public static readonly SolidColorBrush Chip = B(0xFF2A2A2E);
+        public static readonly SolidColorBrush Chip = B(0xFF292929);
 
         // Glyphs (Segoe Fluent Icons / MDL2)
         public const string GClose = "", GCompose = "", GMore = "", GList = "", GHide = "",

@@ -2,19 +2,19 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <!-- Palette ============================================================================== -->
-  <SolidColorBrush x:Key="B.Text" Color="#FFF2F2F4"/>
-  <SolidColorBrush x:Key="B.Text2" Color="#FFA1A1A8"/>
-  <SolidColorBrush x:Key="B.Text3" Color="#FF6C6C72"/>
-  <SolidColorBrush x:Key="B.Border" Color="#FF2A2A2D"/>
-  <SolidColorBrush x:Key="B.Border2" Color="#FF3A3A3E"/>
-  <SolidColorBrush x:Key="B.Inner" Color="#FF1D1D20"/>
-  <SolidColorBrush x:Key="B.Field" Color="#FF262629"/>
-  <SolidColorBrush x:Key="B.Hover" Color="#FF2C2C30"/>
-  <SolidColorBrush x:Key="B.Green" Color="#FF23B27E"/>
-  <SolidColorBrush x:Key="B.Blue" Color="#FF0A84FF"/>
+  <SolidColorBrush x:Key="B.Text" Color="#FFEDEDED"/>
+  <SolidColorBrush x:Key="B.Text2" Color="#FFA1A1A1"/>
+  <SolidColorBrush x:Key="B.Text3" Color="#FF808080"/>
+  <SolidColorBrush x:Key="B.Border" Color="#FF262626"/>
+  <SolidColorBrush x:Key="B.Border2" Color="#FF3A3A3A"/>
+  <SolidColorBrush x:Key="B.Inner" Color="#FF1A1A1A"/>
+  <SolidColorBrush x:Key="B.Field" Color="#FF1F1F1F"/>
+  <SolidColorBrush x:Key="B.Hover" Color="#FF292929"/>
+  <SolidColorBrush x:Key="B.Green" Color="#FF34C759"/>
+  <SolidColorBrush x:Key="B.Blue" Color="#FF3B8EFF"/>
   <SolidColorBrush x:Key="B.Red" Color="#FFFF453A"/>
   <SolidColorBrush x:Key="B.RecBg" Color="#FF3B1718"/>
-  <SolidColorBrush x:Key="B.Amber" Color="#FFF5A524"/>
+  <SolidColorBrush x:Key="B.Amber" Color="#FFFF9F0A"/>
   <SolidColorBrush x:Key="B.WarnBg" Color="#FF2D2313"/>
   <SolidColorBrush x:Key="B.WarnBorder" Color="#FF5C4617"/>
   <FontFamily x:Key="F.UI">Segoe UI</FontFamily>
@@ -41,14 +41,14 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Button">
-          <Border x:Name="bd" CornerRadius="17" BorderThickness="1" BorderBrush="#FF303034">
-            <Border.Background><SolidColorBrush x:Name="bg" Color="#FF232326"/></Border.Background>
+          <Border x:Name="bd" CornerRadius="17" BorderThickness="1" BorderBrush="#FF2A2A2A">
+            <Border.Background><SolidColorBrush x:Name="bg" Color="#FF1F1F1F"/></Border.Background>
             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-              <Trigger.EnterActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FF333337" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
-              <Trigger.ExitActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FF232326" Duration="0:0:0.18"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
+              <Trigger.EnterActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FF292929" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
+              <Trigger.ExitActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FF1F1F1F" Duration="0:0:0.18"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
             </Trigger>
             <Trigger Property="IsPressed" Value="True"><Setter TargetName="bd" Property="Opacity" Value="0.8"/></Trigger>
             <Trigger Property="IsEnabled" Value="False"><Setter TargetName="bd" Property="Opacity" Value="0.4"/></Trigger>
@@ -73,7 +73,7 @@
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-              <Trigger.EnterActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FF2A2A2E" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
+              <Trigger.EnterActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FF292929" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
               <Trigger.ExitActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#00000000" Duration="0:0:0.18"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
               <Setter Property="Foreground" Value="{StaticResource B.Text}"/>
             </Trigger>
@@ -95,14 +95,14 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Button">
-          <Border x:Name="bd" CornerRadius="21" BorderThickness="1" BorderBrush="#FF3A3A3E" Padding="{TemplateBinding Padding}">
-            <Border.Background><SolidColorBrush x:Name="bg" Color="#FF202023"/></Border.Background>
+          <Border x:Name="bd" CornerRadius="21" BorderThickness="1" BorderBrush="#FF3A3A3A" Padding="{TemplateBinding Padding}">
+            <Border.Background><SolidColorBrush x:Name="bg" Color="#FF1F1F1F"/></Border.Background>
             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-              <Trigger.EnterActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FF2E2E32" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
-              <Trigger.ExitActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FF202023" Duration="0:0:0.18"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
+              <Trigger.EnterActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FF292929" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
+              <Trigger.ExitActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FF1F1F1F" Duration="0:0:0.18"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
             </Trigger>
             <Trigger Property="IsPressed" Value="True"><Setter TargetName="bd" Property="Opacity" Value="0.85"/></Trigger>
             <Trigger Property="IsEnabled" Value="False"><Setter TargetName="bd" Property="Opacity" Value="0.4"/></Trigger>
@@ -114,7 +114,7 @@
 
   <!-- Solid white pill ("New call" selected, "Start call") -->
   <Style x:Key="Btn.White" TargetType="Button">
-    <Setter Property="Foreground" Value="#FF111113"/>
+    <Setter Property="Foreground" Value="#FF0A0A0A"/>
     <Setter Property="FontSize" Value="15"/>
     <Setter Property="FontWeight" Value="SemiBold"/>
     <Setter Property="Padding" Value="18,10"/>
@@ -124,18 +124,18 @@
       <Setter.Value>
         <ControlTemplate TargetType="Button">
           <Border x:Name="bd" CornerRadius="24" Padding="{TemplateBinding Padding}">
-            <Border.Background><SolidColorBrush x:Name="bg" Color="#FFF0F0F2"/></Border.Background>
+            <Border.Background><SolidColorBrush x:Name="bg" Color="#FFEDEDED"/></Border.Background>
             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
               <Trigger.EnterActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FFFFFFFF" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
-              <Trigger.ExitActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FFF0F0F2" Duration="0:0:0.18"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
+              <Trigger.ExitActions><BeginStoryboard><Storyboard><ColorAnimation Storyboard.TargetName="bg" Storyboard.TargetProperty="Color" To="#FFEDEDED" Duration="0:0:0.18"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
             </Trigger>
             <Trigger Property="IsPressed" Value="True"><Setter TargetName="bd" Property="Opacity" Value="0.85"/></Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter TargetName="bd" Property="Background" Value="#FF303033"/>
-              <Setter Property="Foreground" Value="#FF6C6C72"/>
+              <Setter Property="Foreground" Value="#FF808080"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>
@@ -146,7 +146,7 @@
 
   <!-- Text link ("Previous session...") -->
   <Style x:Key="Btn.Link" TargetType="Button">
-    <Setter Property="Foreground" Value="{StaticResource B.Green}"/>
+    <Setter Property="Foreground" Value="{StaticResource B.Blue}"/>
     <Setter Property="FontSize" Value="15"/>
     <Setter Property="FontWeight" Value="SemiBold"/>
     <Setter Property="Padding" Value="6,9"/>
@@ -170,19 +170,19 @@
   <Style x:Key="Btn.Send" TargetType="Button">
     <Setter Property="Width" Value="38"/>
     <Setter Property="Height" Value="38"/>
-    <Setter Property="Foreground" Value="#FF8E8E93"/>
+    <Setter Property="Foreground" Value="#FF808080"/>
     <Setter Property="Cursor" Value="Hand"/>
     <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Button">
-          <Border x:Name="bd" CornerRadius="19" Background="#FF262629">
+          <Border x:Name="bd" CornerRadius="19" Background="#FF1F1F1F">
             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="Tag" Value="ready">
-              <Setter TargetName="bd" Property="Background" Value="#FFF0F0F2"/>
-              <Setter Property="Foreground" Value="#FF111113"/>
+              <Setter TargetName="bd" Property="Background" Value="#FFEDEDED"/>
+              <Setter Property="Foreground" Value="#FF0A0A0A"/>
             </Trigger>
             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Opacity" Value="0.85"/></Trigger>
           </ControlTemplate.Triggers>
@@ -191,7 +191,7 @@
     </Setter>
   </Style>
 
-  <!-- Prompt chips: selected = green text with icon, others = outlined pill -->
+  <!-- Chips (segmented choices): selected = white pill, others = outlined pill -->
   <Style x:Key="Radio.Chip" TargetType="RadioButton">
     <Setter Property="Foreground" Value="{StaticResource B.Text}"/>
     <Setter Property="FontSize" Value="15"/>
@@ -201,15 +201,15 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="RadioButton">
-          <Border x:Name="bd" CornerRadius="21" BorderThickness="1" BorderBrush="#FF3A3A3E" Background="#FF202023" Padding="14,9">
+          <Border x:Name="bd" CornerRadius="21" BorderThickness="1" BorderBrush="#FF3A3A3A" Background="#FF1F1F1F" Padding="14,9">
             <ContentPresenter VerticalAlignment="Center"/>
           </Border>
           <ControlTemplate.Triggers>
-            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="#FF2A2A2E"/></Trigger>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="#FF292929"/></Trigger>
             <Trigger Property="IsChecked" Value="True">
               <Setter TargetName="bd" Property="BorderBrush" Value="Transparent"/>
-              <Setter TargetName="bd" Property="Background" Value="Transparent"/>
-              <Setter Property="Foreground" Value="{StaticResource B.Green}"/>
+              <Setter TargetName="bd" Property="Background" Value="#FFEDEDED"/>
+              <Setter Property="Foreground" Value="#FF0A0A0A"/>
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -221,7 +221,7 @@
   <Style x:Key="Radio.Rail" TargetType="RadioButton">
     <Setter Property="Width" Value="44"/>
     <Setter Property="Height" Value="40"/>
-    <Setter Property="Foreground" Value="#FF9A9AA1"/>
+    <Setter Property="Foreground" Value="#FFA1A1A1"/>
     <Setter Property="Cursor" Value="Hand"/>
     <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
     <Setter Property="Template">
@@ -233,7 +233,7 @@
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="{StaticResource B.Text}"/></Trigger>
             <Trigger Property="IsChecked" Value="True">
-              <Setter TargetName="bd" Property="Background" Value="#FF17325A"/>
+              <Setter TargetName="bd" Property="Background" Value="#FF1C2C48"/>
               <Setter Property="Foreground" Value="#FFFFFFFF"/>
             </Trigger>
           </ControlTemplate.Triggers>
@@ -246,20 +246,20 @@
   <Style x:Key="Radio.Dock" TargetType="RadioButton">
     <Setter Property="Width" Value="42"/>
     <Setter Property="Height" Value="42"/>
-    <Setter Property="Foreground" Value="#FFB0B0B6"/>
+    <Setter Property="Foreground" Value="#FFA1A1A1"/>
     <Setter Property="Cursor" Value="Hand"/>
     <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="RadioButton">
-          <Border x:Name="bd" CornerRadius="21" BorderThickness="1" BorderBrush="#FF2E2E32" Background="#FF202023">
+          <Border x:Name="bd" CornerRadius="21" BorderThickness="1" BorderBrush="#FF292929" Background="#FF1F1F1F">
             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
           <ControlTemplate.Triggers>
-            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="#FF2C2C30"/></Trigger>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="#FF292929"/></Trigger>
             <Trigger Property="IsChecked" Value="True">
-              <Setter TargetName="bd" Property="Background" Value="#FF38383C"/>
-              <Setter TargetName="bd" Property="BorderBrush" Value="#FF4A4A50"/>
+              <Setter TargetName="bd" Property="Background" Value="#FF333333"/>
+              <Setter TargetName="bd" Property="BorderBrush" Value="#FF4A4A4A"/>
               <Setter Property="Foreground" Value="#FFFFFFFF"/>
             </Trigger>
           </ControlTemplate.Triggers>
@@ -270,7 +270,7 @@
 
   <!-- Dock navigation button with the amber accent (Settings / profile) -->
   <Style x:Key="Radio.DockAccent" TargetType="RadioButton" BasedOn="{StaticResource Radio.Dock}">
-    <Setter Property="Foreground" Value="#FFF5A524"/>
+    <Setter Property="Foreground" Value="#FFFF9F0A"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="RadioButton">
@@ -281,7 +281,7 @@
             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="#FF412F12"/></Trigger>
             <Trigger Property="IsChecked" Value="True">
               <Setter TargetName="bd" Property="Background" Value="#FF4D3814"/>
-              <Setter TargetName="bd" Property="BorderBrush" Value="#FFF5A524"/>
+              <Setter TargetName="bd" Property="BorderBrush" Value="#FFFF9F0A"/>
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -298,8 +298,8 @@
       <Setter.Value>
         <ControlTemplate TargetType="CheckBox">
           <Border x:Name="track" Width="52" Height="30" CornerRadius="15" BorderThickness="1" BorderBrush="#22FFFFFF">
-            <Border.Background><SolidColorBrush x:Name="trackBrush" Color="#FF3A3A3E"/></Border.Background>
-            <Ellipse Width="26" Height="26" Fill="#FFF4F4F6" HorizontalAlignment="Left" Margin="1,0,0,0">
+            <Border.Background><SolidColorBrush x:Name="trackBrush" Color="#FF3A3A3A"/></Border.Background>
+            <Ellipse Width="26" Height="26" Fill="#FFEDEDED" HorizontalAlignment="Left" Margin="1,0,0,0">
               <Ellipse.RenderTransform><TranslateTransform x:Name="knob" X="0"/></Ellipse.RenderTransform>
               <Ellipse.Effect><DropShadowEffect BlurRadius="5" ShadowDepth="1" Opacity="0.35"/></Ellipse.Effect>
             </Ellipse>
@@ -312,7 +312,7 @@
                     <DoubleAnimation Storyboard.TargetName="knob" Storyboard.TargetProperty="X" To="22" Duration="0:0:0.2">
                       <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
                     </DoubleAnimation>
-                    <ColorAnimation Storyboard.TargetName="trackBrush" Storyboard.TargetProperty="Color" To="#FF1F9E72" Duration="0:0:0.2"/>
+                    <ColorAnimation Storyboard.TargetName="trackBrush" Storyboard.TargetProperty="Color" To="#FF3B8EFF" Duration="0:0:0.2"/>
                   </Storyboard>
                 </BeginStoryboard>
               </Trigger.EnterActions>
@@ -322,7 +322,7 @@
                     <DoubleAnimation Storyboard.TargetName="knob" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.2">
                       <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
                     </DoubleAnimation>
-                    <ColorAnimation Storyboard.TargetName="trackBrush" Storyboard.TargetProperty="Color" To="#FF3A3A3E" Duration="0:0:0.2"/>
+                    <ColorAnimation Storyboard.TargetName="trackBrush" Storyboard.TargetProperty="Color" To="#FF3A3A3A" Duration="0:0:0.2"/>
                   </Storyboard>
                 </BeginStoryboard>
               </Trigger.ExitActions>
@@ -348,7 +348,7 @@
               <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
             <Grid Width="22" Height="22" Margin="0,0,14,0" VerticalAlignment="Center">
-              <Ellipse x:Name="ring" Stroke="#FF55555B" StrokeThickness="1.5"/>
+              <Ellipse x:Name="ring" Stroke="#FF555555" StrokeThickness="1.5"/>
               <Ellipse x:Name="fill" Fill="{StaticResource B.Blue}" Opacity="0"/>
               <TextBlock x:Name="tick" Text="&#xE73E;" FontFamily="{StaticResource F.Icons}" FontSize="11" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0"/>
             </Grid>
@@ -382,7 +382,7 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Thumb">
-          <Border Width="40" Height="26" CornerRadius="13" Background="#FFEDEDEF">
+          <Border Width="40" Height="26" CornerRadius="13" Background="#FFEDEDED">
             <Border.Effect><DropShadowEffect BlurRadius="6" ShadowDepth="1" Opacity="0.4"/></Border.Effect>
           </Border>
         </ControlTemplate>
@@ -396,12 +396,12 @@
       <Setter.Value>
         <ControlTemplate TargetType="Slider">
           <Grid Height="38" Background="Transparent">
-            <Border Height="6" CornerRadius="3" Background="#FF45454A" VerticalAlignment="Center" Margin="0,-6,0,0"/>
+            <Border Height="6" CornerRadius="3" Background="#FF3A3A3A" VerticalAlignment="Center" Margin="0,-6,0,0"/>
             <Rectangle Height="4" VerticalAlignment="Bottom" Margin="18,0,18,2">
               <Rectangle.Fill>
                 <DrawingBrush TileMode="Tile" Viewport="0,0,30,4" ViewportUnits="Absolute" Viewbox="0,0,30,4" ViewboxUnits="Absolute">
                   <DrawingBrush.Drawing>
-                    <GeometryDrawing Brush="#FF5E5E64">
+                    <GeometryDrawing Brush="#FF5E5E5E">
                       <GeometryDrawing.Geometry><EllipseGeometry Center="2,2" RadiusX="1.6" RadiusY="1.6"/></GeometryDrawing.Geometry>
                     </GeometryDrawing>
                   </DrawingBrush.Drawing>
@@ -425,7 +425,7 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="RepeatButton">
-          <Grid Background="Transparent"><Border Height="4" CornerRadius="2" Background="#FFE8E8EC" VerticalAlignment="Center"/></Grid>
+          <Grid Background="Transparent"><Border Height="4" CornerRadius="2" Background="#FFEDEDED" VerticalAlignment="Center"/></Grid>
         </ControlTemplate>
       </Setter.Value>
     </Setter>
@@ -447,7 +447,7 @@
       <Setter.Value>
         <ControlTemplate TargetType="Slider">
           <Grid Height="24" Background="Transparent">
-            <Border Height="4" CornerRadius="2" Background="#FF4A4A50" VerticalAlignment="Center"/>
+            <Border Height="4" CornerRadius="2" Background="#FF4A4A4A" VerticalAlignment="Center"/>
             <Track x:Name="PART_Track">
               <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource Slider.MiniFill}"/></Track.DecreaseRepeatButton>
               <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource Slider.RepeatButton}"/></Track.IncreaseRepeatButton>
@@ -466,22 +466,22 @@
     <Setter Property="SelectionBrush" Value="{StaticResource B.Blue}"/>
     <Setter Property="FontSize" Value="15"/>
     <Setter Property="Padding" Value="14,11"/>
-    <Setter Property="Background" Value="#FF252528"/>
-    <Setter Property="BorderBrush" Value="#FF36363A"/>
+    <Setter Property="Background" Value="#FF0A0A0A"/>
+    <Setter Property="BorderBrush" Value="#FF3A3A3A"/>
     <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="TextBox">
           <Border x:Name="bd" CornerRadius="12" BorderThickness="1" BorderBrush="{TemplateBinding BorderBrush}" Background="{TemplateBinding Background}">
             <Grid>
-              <TextBlock x:Name="ph" Text="{TemplateBinding Tag}" Foreground="#FF6C6C72" Margin="{TemplateBinding Padding}" Padding="2,0,0,0"
+              <TextBlock x:Name="ph" Text="{TemplateBinding Tag}" Foreground="#FF808080" Margin="{TemplateBinding Padding}" Padding="2,0,0,0"
                          IsHitTestVisible="False" Visibility="Collapsed" TextWrapping="Wrap"/>
               <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
             </Grid>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="Text" Value=""><Setter TargetName="ph" Property="Visibility" Value="Visible"/></Trigger>
-            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="bd" Property="BorderBrush" Value="#FF55555C"/></Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="bd" Property="BorderBrush" Value="#FF555555"/></Trigger>
             <Trigger Property="IsEnabled" Value="False"><Setter TargetName="bd" Property="Opacity" Value="0.5"/></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -499,11 +499,11 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="PasswordBox">
-          <Border x:Name="bd" CornerRadius="10" BorderThickness="1" BorderBrush="#FF36363A" Background="#FF252528">
+          <Border x:Name="bd" CornerRadius="10" BorderThickness="1" BorderBrush="#FF3A3A3A" Background="#FF0A0A0A">
             <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center"/>
           </Border>
           <ControlTemplate.Triggers>
-            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="bd" Property="BorderBrush" Value="#FF55555C"/></Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="bd" Property="BorderBrush" Value="#FF555555"/></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>
@@ -515,9 +515,9 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Thumb">
-          <Border x:Name="t" CornerRadius="3" Background="#FF4A4A50"/>
+          <Border x:Name="t" CornerRadius="3" Background="#FF4A4A4A"/>
           <ControlTemplate.Triggers>
-            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="t" Property="Background" Value="#FF6A6A70"/></Trigger>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="t" Property="Background" Value="#FF6A6A6A"/></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>
@@ -564,7 +564,7 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Separator">
-          <Border Height="1" Margin="14,5" Background="#FF424246"/>
+          <Border Height="1" Margin="14,5" Background="#FF333333"/>
         </ControlTemplate>
       </Setter.Value>
     </Setter>
@@ -579,7 +579,7 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="ContextMenu">
-          <Border Background="#F62C2C2F" BorderBrush="#FF46464A" BorderThickness="1" CornerRadius="14" Padding="0,6" Margin="0,0,16,16" MinWidth="250">
+          <Border Background="#F61C1C1C" BorderBrush="#FF333333" BorderThickness="1" CornerRadius="14" Padding="0,6" Margin="0,0,16,16" MinWidth="250">
             <Border.Effect><DropShadowEffect BlurRadius="22" ShadowDepth="6" Opacity="0.5"/></Border.Effect>
             <!-- Long menus (the language list) scroll when the ContextMenu has a MaxHeight -->
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -609,12 +609,12 @@
               <TextBlock x:Name="check" Grid.Column="0" Text="&#xE73E;" FontFamily="{StaticResource F.Icons}" FontSize="12" Width="22"
                          VerticalAlignment="Center" Visibility="Collapsed"/>
               <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="False" VerticalAlignment="Center" Margin="0,6"/>
-              <TextBlock x:Name="gesture" Grid.Column="2" Text="{TemplateBinding InputGestureText}" Margin="28,0,0,0" Foreground="#FF8E8E93" VerticalAlignment="Center"/>
+              <TextBlock x:Name="gesture" Grid.Column="2" Text="{TemplateBinding InputGestureText}" Margin="28,0,0,0" Foreground="#FF808080" VerticalAlignment="Center"/>
               <TextBlock x:Name="arrow" Grid.Column="3" Text="&#xE76C;" FontFamily="{StaticResource F.Icons}" FontSize="12" Margin="18,0,0,0"
                          VerticalAlignment="Center" Visibility="Collapsed"/>
               <Popup x:Name="PART_Popup" Placement="Right" HorizontalOffset="8" VerticalOffset="-8" AllowsTransparency="True" Focusable="False"
                      PopupAnimation="Fade" IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
-                <Border Background="#F62C2C2F" BorderBrush="#FF46464A" BorderThickness="1" CornerRadius="14" Padding="0,6" Margin="0,0,16,16" MinWidth="200">
+                <Border Background="#F61C1C1C" BorderBrush="#FF333333" BorderThickness="1" CornerRadius="14" Padding="0,6" Margin="0,0,16,16" MinWidth="200">
                   <Border.Effect><DropShadowEffect BlurRadius="22" ShadowDepth="6" Opacity="0.5"/></Border.Effect>
                   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="520">
                     <StackPanel IsItemsHost="True" Grid.IsSharedSizeScope="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
@@ -628,10 +628,10 @@
             <Trigger Property="IsChecked" Value="True"><Setter TargetName="check" Property="Visibility" Value="Visible"/></Trigger>
             <Trigger Property="Role" Value="SubmenuHeader"><Setter TargetName="arrow" Property="Visibility" Value="Visible"/></Trigger>
             <Trigger Property="IsHighlighted" Value="True">
-              <Setter TargetName="bd" Property="Background" Value="#FF0A6CE0"/>
+              <Setter TargetName="bd" Property="Background" Value="#FF2F6FD6"/>
               <Setter TargetName="gesture" Property="Foreground" Value="#E6FFFFFF"/>
             </Trigger>
-            <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="#FF6C6C72"/></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="#FF808080"/></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>
@@ -662,7 +662,7 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="ToolTip">
-          <Border Background="#F2303034" BorderBrush="#FF46464A" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="0,0,8,8">
+          <Border Background="#F22A2A2A" BorderBrush="#FF333333" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="0,0,8,8">
             <Border.Effect><DropShadowEffect BlurRadius="12" ShadowDepth="3" Opacity="0.4"/></Border.Effect>
             <ContentPresenter/>
           </Border>

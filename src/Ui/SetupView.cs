@@ -280,8 +280,8 @@ namespace TheCloser.Ui
             {
                 CornerRadius = new CornerRadius(21),
                 BorderThickness = new Thickness(1),
-                BorderBrush = problem == null ? U.B(0xFF3A3A3E) : U.WarnBorder,
-                Background = U.B(0xFF202023),
+                BorderBrush = problem == null ? U.B(0xFF3A3A3A) : U.WarnBorder,
+                Background = U.B(0xFF1F1F1F),
                 Padding = new Thickness(14, 5, 6, 5),
                 Child = sp,
                 ToolTip = problem ?? path
