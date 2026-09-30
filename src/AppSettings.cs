@@ -148,14 +148,15 @@ namespace TheCloser
 
         /// <summary>
         /// The transcription engine actually used. Pro transcribes on this PC; a cloud engine without its key falls back
-        /// to Windows Live Captions; "Automatic" prefers ElevenLabs, then Grok. Same rules as the Mac app.
+        /// to Windows Live Captions; "Automatic" prefers ElevenLabs, then Grok. Same rules as the Mac app, except that
+        /// Live Captions needs Windows 11, so on older Windows Pro uses your own speech key if you've added one.
         /// </summary>
         [ScriptIgnore]
         public string EffectiveTranscription
         {
             get
             {
-                if (UseSubscription && SubscriptionClient.HasActivePass(this)) return "LiveCaptions";
+                if (UseSubscription && SubscriptionClient.HasActivePass(this) && LiveCaptionsSource.IsAvailable) return "LiveCaptions";
                 switch (Transcription)
                 {
                     case "LiveCaptions": return "LiveCaptions";

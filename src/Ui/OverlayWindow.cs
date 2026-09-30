@@ -1151,6 +1151,7 @@ namespace TheCloser.Ui
         {
             _setup.Refresh();
             _session.RefreshState();
+            RefreshDock();
         }
 
         public void SaveSettingsSoon()
