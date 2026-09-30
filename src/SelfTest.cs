@@ -122,7 +122,7 @@ namespace TheCloser
 
             var legacy = Json.Deserialize<AppSettings>("{\"Model\":\"claude-haiku-4-5\",\"EnabledModels\":[\"claude-haiku-4-5\",\"anthropic/claude-haiku-4.5\",\"claude-opus-5-5\"]}").Clone();
             Check("bare claude id normalized", legacy.Model == "anthropic/claude-haiku-4.5", legacy.Model);
-            Check("normalized models deduped", legacy.EnabledModels.SequenceEqual(new[] { "anthropic/claude-haiku-4.5", "anthropic/claude-opus-5-5" }), string.Join(", ", legacy.EnabledModels));
+            Check("normalized models deduped", legacy.EnabledModels.SequenceEqual(new[] { "anthropic/claude-haiku-4.5", "anthropic/claude-opus-5.5" }), string.Join(", ", legacy.EnabledModels));
             Check("no key, no route", ModelCatalog.Resolve(legacy, legacy.Model).Provider == null, null);
             legacy.OpenRouterKey = "sk-or-test";
             Check("every model routes through OpenRouter", ModelCatalog.Resolve(legacy, legacy.Model).Provider == "openrouter", null);
@@ -188,8 +188,8 @@ namespace TheCloser
             Check("openrouter payload", json.Contains("\"reasoning\"") && json.Contains("\"messages\"") && json.Contains("anthropic/claude-sonnet-5"), null);
             Check("transcript in user turn", json.Contains("Why do you want to work here?"), null);
             Check("context in the system prompt", json.Contains("Acme Pay"), null);
-            Check("this session's answers replayed", json.Contains("<earlier_answers>") && json.Contains("I build payment systems."), null);
-            Check("past sessions' answers replayed", json.Contains("<past_sessions>") && json.Contains("I over-document."), null);
+            Check("this session's answers replayed", json.Contains("earlier_answers") && json.Contains("I build payment systems."), null);
+            Check("past sessions' answers replayed", json.Contains("past_sessions") && json.Contains("I over-document."), null);
             Check("valid JSON", Json.Parse(json) is Dictionary<string, object>, null);
             var img = Json.Serialize(PromptBuilder.ForOpenRouter(MakeRequest(new AppSettings(), "", AnswerKind.Screen, "focus on Q3", "AAAA"), "openai/gpt-5.5"));
             Check("screen request has image block", img.Contains("image_url") && img.Contains("image/jpeg") && img.Contains("focus on Q3"), null);

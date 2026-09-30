@@ -76,7 +76,7 @@ namespace TheCloser.Ui
             _continueBtn.Margin = new Thickness(0, 0, 8, 0);
             _collapseBtn = U.Circle(U.GDown, ToggleCollapsed, "Collapse", 13);
             _transcriptBtn = U.Circle(U.GList, () => W.SetShowTranscript(!W.S.ShowTranscript), "Show live transcript", 15);
-            _stealthBtn = U.Circle(U.GHide, () => W.ToggleStealth(), "", 15);
+            _stealthBtn = U.Circle(U.GView, () => W.ToggleStealth(), "", 15);
             foreach (var b in new FrameworkElement[] { _continueBtn, _collapseBtn, _transcriptBtn, _stealthBtn })
             {
                 if (b != _continueBtn) b.Margin = new Thickness(8, 0, 0, 0);
@@ -161,7 +161,7 @@ namespace TheCloser.Ui
             }
             _continueBtn.Visibility = !Ctl.Active && s != null ? Visibility.Visible : Visibility.Collapsed;
             _collapseBtn.Visibility = s != null && s.Qas.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            _stealthBtn.Content = U.Icon(W.S.HideFromCapture ? U.GHide : U.GView, 15, W.S.HideFromCapture ? null : U.Amber);
+            _stealthBtn.Content = W.S.HideFromCapture ? U.EyeSlash(15, null) : (FrameworkElement)U.Icon(U.GView, 15, U.Amber);
             _stealthBtn.ToolTip = W.S.HideFromCapture ? "Hidden from screen sharing (click to show)" : "Visible to screen sharing (click to hide)";
             _transcriptBtn.Content = U.Icon(U.GList, 15, W.S.ShowTranscript ? U.Blue : null);
 

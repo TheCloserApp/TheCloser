@@ -144,7 +144,8 @@ namespace TheCloser.Ui
             RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             RowDefinitions.Add(new RowDefinition());
             _search = U.Input("Search sessions…", "", false);
-            _search.Padding = new Thickness(40, 10, 14, 10);
+            _search.Padding = new Thickness(40, 8, 14, 8);
+            _search.VerticalContentAlignment = VerticalAlignment.Center;
             _search.TextChanged += delegate { _query = _search.Text.Trim(); FillList(); };
             Children.Add(_header);
             var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _list };

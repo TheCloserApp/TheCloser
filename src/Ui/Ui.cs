@@ -43,7 +43,7 @@ namespace TheCloser.Ui
             GCamera = "", GCopy = "",
             GMemory = "\uE8F1", GRemove = "\uE738", GPeople = "\uE716", GPhone = "\uE717", GStop = "\uE71A",
             GPower = "\uE7E8", GUndo = "\uE7A7", GExport = "\uEDE1", GWand = "\uE945", GCpu = "\uE950",
-            GWave = "\uE9D9", GContrast = "\uE793", GLayers = "\uE81E", GFont = "\uE8D2", GHighlight = "\uE7E6",
+GContrast = "\uE793", GLayers = "\uE81E", GFont = "\uE8D2", GHighlight = "\uE7E6",
             GKey = "\uE8D7", GLock = "\uE72E", GVideo = "\uE714";
 
         public static Color C(uint argb)
@@ -79,6 +79,23 @@ namespace TheCloser.Ui
             var t = new TextBlock { Text = glyph, FontFamily = Icons, FontSize = size, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center };
             if (fg != null) t.Foreground = fg;
             return t;
+        }
+
+        /// <summary>
+        /// An eye with a slash ("hidden"), drawn over the eye glyph: the Hide glyph is missing from the icon font on
+        /// Windows Server and older Windows 10. With fg == null it inherits the parent's foreground.
+        /// </summary>
+        public static FrameworkElement EyeSlash(double size, Brush fg)
+        {
+            var g = new Grid { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            var eye = Icon(GView, size, fg);
+            g.Children.Add(eye);
+            var slash = new Line { X1 = size * 0.12, Y1 = size * 0.12, X2 = size * 0.88, Y2 = size * 0.88, StrokeThickness = Math.Max(1, size / 12), StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
+            slash.SetBinding(Shape.StrokeProperty, new System.Windows.Data.Binding("Foreground") { Source = eye });
+            g.Children.Add(slash);
+            g.Width = size;
+            g.Height = size;
+            return g;
         }
 
         /// <summary>Icon + label, used as button content.</summary>

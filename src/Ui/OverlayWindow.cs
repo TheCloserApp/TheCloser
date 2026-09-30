@@ -728,6 +728,14 @@ namespace TheCloser.Ui
 
         internal Button MoreButton { get { return _moreBtn; } }
 
+        /// <summary>Takes the current screen out of the panel, to draw it at full length (`--render`).</summary>
+        internal FrameworkElement DetachView()
+        {
+            var el = _viewHost.Content as FrameworkElement;
+            _viewHost.Content = null;
+            return el;
+        }
+
         /// <summary>Slides the capsule open as if hovered (`--render`).</summary>
         internal void PreviewDockHover()
         {
@@ -973,7 +981,7 @@ namespace TheCloser.Ui
                 bool reveal = shown.Visibility != Visibility.Visible;
                 shown.Visibility = reveal ? Visibility.Visible : Visibility.Collapsed;
                 hidden.Visibility = reveal ? Visibility.Collapsed : Visibility.Visible;
-                eye.Content = U.Icon(reveal ? U.GHide : U.GView, 15, null);
+                eye.Content = reveal ? U.EyeSlash(15, null) : (FrameworkElement)U.Icon(U.GView, 15, null);
             }, "Show or hide the key");
             eye.Margin = new Thickness(8, 0, 0, 0);
             Grid.SetColumn(eye, 1);

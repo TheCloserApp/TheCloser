@@ -55,6 +55,10 @@ namespace TheCloser.Ui
                 var p = page;
                 Scene("settings-" + p, 560, 1200, delegate(OverlayWindow w) { w.ShowSettings(p); });
             }
+            // Full length, below the fold too (a window can't be taller than the screen).
+            PageScene("setup-full", 560, delegate(OverlayWindow w) { w.ShowView("setup"); });
+            PageScene("settings-general-full", 600, delegate(OverlayWindow w) { w.ShowSettings("general"); });
+            PageScene("settings-ai-full", 600, delegate(OverlayWindow w) { w.ShowSettings("ai"); });
             MenuScene("menu", delegate(OverlayWindow w) { w.LoadDemo(); });
             CallPromptScene();
 
@@ -83,6 +87,43 @@ namespace TheCloser.Ui
                 setup(w);
                 Pump(900); // entrance animations run ~220 ms
                 Save(w, width, height, name);
+                _log.AppendLine("OK    " + name);
+                WriteLog();
+            }
+            catch (Exception ex)
+            {
+                _failures++;
+                _log.AppendLine("FAIL  " + name + ": " + ex);
+            }
+            finally
+            {
+                if (w != null) try { w.Close(); } catch { }
+            }
+        }
+
+        /// <summary>A screen at its full length, on the card's background, at the panel's scale.</summary>
+        private static void PageScene(string name, double width, Action<OverlayWindow> setup)
+        {
+            OverlayWindow w = null;
+            try
+            {
+                w = Open(520, 700);
+                setup(w);
+                Pump(300);
+                var view = w.DetachView();
+                var host = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(0x11, 0x11, 0x11)),
+                    Width = width,
+                    Child = view,
+                    LayoutTransform = new ScaleTransform(0.86, 0.86)
+                };
+                host.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                host.Arrange(new Rect(host.DesiredSize));
+                host.UpdateLayout();
+                Pump(600);
+                host.UpdateLayout();
+                Save(host, host.DesiredSize.Width, host.DesiredSize.Height, name);
                 _log.AppendLine("OK    " + name);
                 WriteLog();
             }

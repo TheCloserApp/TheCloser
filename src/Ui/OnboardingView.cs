@@ -163,22 +163,21 @@ namespace TheCloser.Ui
             p.Children.Add(tag);
 
             var points = new StackPanel();
-            points.Children.Add(Point(U.GWave, "Hears the interviewer and answers as they ask"));
-            points.Children.Add(Point(U.GHide, "Hidden from screen shares and recordings"));
-            points.Children.Add(Point(U.GVideo, "Works with Zoom, Meet, Teams and any call app"));
-            points.Children.Add(Point(U.GLock, "Sessions stay on this PC. We keep no copy of your audio or conversations."));
+            points.Children.Add(Point(U.WaveLogo(13, U.Text2), "Hears the interviewer and answers as they ask"));
+            points.Children.Add(Point(U.EyeSlash(15, U.Text2), "Hidden from screen shares and recordings"));
+            points.Children.Add(Point(U.Icon(U.GVideo, 15, U.Text2), "Works with Zoom, Meet, Teams and any call app"));
+            points.Children.Add(Point(U.Icon(U.GLock, 15, U.Text2), "Sessions stay on this PC. We keep no copy of your audio or conversations."));
             var box = U.Box(points, new Thickness(20, 14, 20, 14));
             box.Margin = new Thickness(0, 28, 0, 0);
             p.Children.Add(box);
             return p;
         }
 
-        private static FrameworkElement Point(string glyph, string text)
+        private static FrameworkElement Point(FrameworkElement icon, string text)
         {
             var g = new Grid { Margin = new Thickness(0, 6, 0, 6) };
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
             g.ColumnDefinitions.Add(new ColumnDefinition());
-            var icon = U.Icon(glyph, 15, U.Text2);
             icon.VerticalAlignment = VerticalAlignment.Top;
             icon.HorizontalAlignment = HorizontalAlignment.Left;
             icon.Margin = new Thickness(0, 2, 0, 0);
