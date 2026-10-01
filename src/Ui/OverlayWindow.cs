@@ -1003,14 +1003,15 @@ namespace TheCloser.Ui
                     mi.Click += delegate
                     {
                         SetSpeechLanguage(lang.Code);
-                        b.Content = PickerLabel(U.Icon(U.GGlobe, 15, null), SpeechLanguages.Name(S.SpeechLanguage));
+                        b.Content = PickerLabel(U.Icon(U.GGlobe, 15, null), SpeechLanguages.ChipName(S.SpeechLanguage));
                         if (changed != null) changed();
                     };
                     menu.Items.Add(mi);
+                    if (lang.Code.Length == 0) menu.Items.Add(new Separator());
                 }
                 OpenBelow(menu, b);
             }, "Language of the interview");
-            b.Content = PickerLabel(U.Icon(U.GGlobe, 15, null), SpeechLanguages.Name(S.SpeechLanguage));
+            b.Content = PickerLabel(U.Icon(U.GGlobe, 15, null), SpeechLanguages.ChipName(S.SpeechLanguage));
             return b;
         }
 

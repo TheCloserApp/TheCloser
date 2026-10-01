@@ -335,6 +335,11 @@ namespace TheCloser
             Check("Telugu lock keeps Telugu and English mixed in", SpeechLanguages.Matches("te", telugu) && SpeechLanguages.Matches("te", "Tell me about yourself"), null);
             Check("Telugu lock drops Hindi", !SpeechLanguages.Matches("te", hindi), null);
             Check("auto keeps everything; numbers-only is neutral", SpeechLanguages.Matches("", telugu) && SpeechLanguages.Matches("ja", "2024?"), null);
+            var any = new AppSettings { SpeechLanguage = "" };
+            Check("all languages: no language sent, so the engines detect it", !ElevenLabsStreamingSource.BuildUrl(any).Contains("language_code") &&
+                  !GrokStreamingSource.BuildUrl(any).Contains("language="), null);
+            Check("all languages is named so", SpeechLanguages.Name("") == "All languages (auto-detect)" && SpeechLanguages.ChipName("") == "All languages" &&
+                  SpeechLanguages.ChipName("te") == "Telugu", null);
 
             var src = new GrokStreamingSource(s);
             var ch = GrokStreamingSource.TestChannel("Them");
