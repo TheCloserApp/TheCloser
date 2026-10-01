@@ -261,18 +261,15 @@ namespace TheCloser.Ui
         private FrameworkElement KeysStep()
         {
             var p = StepPage();
-            bool grok = S.Transcription == "Grok";
-            Header(p, "Add your keys", "Both are needed to start an interview.");
+            Header(p, "Add your keys", "OpenRouter, plus ElevenLabs or xAI to transcribe.");
             p.Children.Add(KeyInput("OpenRouter", "runs every AI model", "https://openrouter.ai/keys", W.KeyField("sk-or-…", S.OpenRouterKey, v => { S.OpenRouterKey = v; RefreshFooter(); })));
-            if (grok)
-                p.Children.Add(KeyInput("xAI", "transcribes the interview", "https://console.x.ai", W.KeyField("xai-…", S.XaiKey, v => { S.XaiKey = v; RefreshFooter(); })));
-            else
-                p.Children.Add(KeyInput("ElevenLabs", "transcribes the interview", "https://elevenlabs.io/app/settings/api-keys", W.KeyField("sk_…", S.ElevenLabsKey, v => { S.ElevenLabsKey = v; RefreshFooter(); })));
+            p.Children.Add(KeyInput("ElevenLabs", "transcribes the interview", "https://elevenlabs.io/app/settings/api-keys", W.KeyField("sk_…", S.ElevenLabsKey, v => { S.ElevenLabsKey = v; RefreshFooter(); })));
+            p.Children.Add(KeyInput("xAI", "or transcribe with Grok", "https://console.x.ai", W.KeyField("xai-…", S.XaiKey, v => { S.XaiKey = v; RefreshFooter(); })));
             var note = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 18, 0, 0) };
             var shield = U.Icon(U.GLock, 12, U.Text2);
             shield.Margin = new Thickness(0, 1, 8, 0);
             note.Children.Add(shield);
-            note.Children.Add(U.T("Stored only on this PC, and sent only to OpenRouter and " + (grok ? "xAI" : "ElevenLabs") + ".", 13.5, U.Text2));
+            note.Children.Add(U.T("Stored only on this PC, and sent only to the service each key is for.", 13.5, U.Text2));
             p.Children.Add(note);
             return p;
         }

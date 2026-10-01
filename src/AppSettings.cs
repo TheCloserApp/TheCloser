@@ -172,7 +172,10 @@ namespace TheCloser
             }
         }
 
-        /// <summary>Keys an interview needs before it can start: OpenRouter, plus ElevenLabs (or xAI when Grok is picked). None on Pro.</summary>
+        /// <summary>
+        /// Keys an interview needs before it can start: OpenRouter, plus ElevenLabs or xAI (the picked one, when ElevenLabs
+        /// or Grok is picked). None on Pro.
+        /// </summary>
         [ScriptIgnore]
         public List<string> MissingKeys
         {
@@ -182,7 +185,8 @@ namespace TheCloser
                 if (UseSubscription && SubscriptionClient.HasActivePass(this)) return missing;
                 if (EffectiveOpenRouterKey.Length == 0) missing.Add("OpenRouter");
                 if (Transcription == "Grok") { if (EffectiveXaiKey.Length == 0) missing.Add("xAI"); }
-                else if (EffectiveElevenLabsKey.Length == 0) missing.Add("ElevenLabs");
+                else if (Transcription == "ElevenLabs") { if (EffectiveElevenLabsKey.Length == 0) missing.Add("ElevenLabs"); }
+                else if (EffectiveElevenLabsKey.Length == 0 && EffectiveXaiKey.Length == 0) missing.Add("ElevenLabs");
                 return missing;
             }
         }

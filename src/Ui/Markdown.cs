@@ -5,12 +5,14 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace TheCloser.Ui
 {
     /// <summary>
     /// Renders the Markdown subset models use in answers (headings, bullets, numbers, bold, italic, code) as WPF.
-    /// Bold spans are the answer's keywords, drawn in the chosen keyword style.
+    /// Bold spans are the answer's keywords, drawn in the chosen keyword style. "Plain text" draws everything but code as
+    /// plain lines.
     /// </summary>
     internal static class MarkdownView
     {
@@ -28,17 +30,23 @@ namespace TheCloser.Ui
             var root = new StackPanel();
             var lines = (markdown ?? "").Replace("\r\n", "\n").Split('\n');
             StringBuilder code = null;
+            string lang = "";
             bool lastBlank = true;
+            bool plain = keywordStyle == KeywordStyles.Plain;
 
             foreach (var raw in lines)
             {
                 var line = raw.TrimEnd();
                 if (line.TrimStart().StartsWith("```"))
                 {
-                    if (code == null) code = new StringBuilder();
+                    if (code == null)
+                    {
+                        code = new StringBuilder();
+                        lang = line.Trim().Substring(3).Trim();
+                    }
                     else
                     {
-                        root.Children.Add(CodeBlock(code.ToString().TrimEnd('\n'), size));
+                        root.Children.Add(CodeBlock(code.ToString().TrimEnd('\n'), lang, size));
                         code = null;
                     }
                     continue;
@@ -56,11 +64,14 @@ namespace TheCloser.Ui
 
                 if (Regex.IsMatch(trimmed, @"^(-{3,}|\*{3,}|_{3,})$"))
                 {
+                    if (plain) continue;
                     root.Children.Add(new Border { Height = 1, Background = U.Line, Margin = new Thickness(0, size * 0.6, 0, size * 0.4) });
                     continue;
                 }
 
+                // Plain text: headings, list items and quotes read as ordinary lines.
                 var m = Heading.Match(trimmed);
+                if (m.Success && plain) { root.Children.Add(Para(m.Groups[2].Value, size, top, keywordStyle)); continue; }
                 if (m.Success)
                 {
                     var tb = Para(m.Groups[2].Value, size * (m.Groups[1].Value.Length <= 2 ? 1.12 : 1.04), top + size * 0.15, keywordStyle);
@@ -70,18 +81,21 @@ namespace TheCloser.Ui
                 }
 
                 m = Bullet.Match(line);
+                if (m.Success && plain) { root.Children.Add(Para(m.Groups[3].Value, size, top, keywordStyle)); continue; }
                 if (m.Success)
                 {
                     root.Children.Add(ListItem("•", m.Groups[3].Value, Depth(m.Groups[1].Value), size, top, keywordStyle));
                     continue;
                 }
                 m = Numbered.Match(line);
+                if (m.Success && plain) { root.Children.Add(Para(m.Groups[2].Value + ". " + m.Groups[3].Value, size, top, keywordStyle)); continue; }
                 if (m.Success)
                 {
                     root.Children.Add(ListItem(m.Groups[2].Value + ".", m.Groups[3].Value, Depth(m.Groups[1].Value), size, top, keywordStyle));
                     continue;
                 }
 
+                if (trimmed.StartsWith(">") && plain) { root.Children.Add(Para(trimmed.TrimStart('>', ' '), size, top, keywordStyle)); continue; }
                 if (trimmed.StartsWith(">"))
                 {
                     var q = Para(trimmed.TrimStart('>', ' '), size, 0, keywordStyle);
@@ -99,7 +113,7 @@ namespace TheCloser.Ui
 
                 root.Children.Add(Para(line, size, top, keywordStyle));
             }
-            if (code != null) root.Children.Add(CodeBlock(code.ToString().TrimEnd('\n'), size));
+            if (code != null) root.Children.Add(CodeBlock(code.ToString().TrimEnd('\n'), lang, size));
             return root;
         }
 
@@ -136,31 +150,69 @@ namespace TheCloser.Ui
             return g;
         }
 
-        private static Border CodeBlock(string code, double size)
+        /// <summary>A code block like the Mac app's: the language and a Copy button above the code.</summary>
+        private static Border CodeBlock(string code, string lang, double size)
         {
+            double mono = Math.Max(11, size * 0.78);
             var tb = new TextBlock
             {
-                Text = code,
+                Text = code.Replace("\t", "    "),
                 FontFamily = U.Mono,
-                FontSize = Math.Max(11, size * 0.78),
+                FontSize = mono,
                 Foreground = U.B(0xFFD6DEEB),
-                LineHeight = Math.Max(11, size * 0.78) * 1.45
+                LineHeight = mono * 1.45,
+                Margin = new Thickness(14, 10, 14, 12)
             };
+            var label = new TextBlock
+            {
+                Text = (lang.Length == 0 ? "code" : lang).ToUpperInvariant(),
+                FontFamily = U.Mono,
+                FontSize = Math.Max(10, size * 0.66),
+                Foreground = U.Text2,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var copyLabel = new TextBlock { Text = "Copy", FontSize = Math.Max(11, size * 0.74), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 1) };
+            var copyContent = new StackPanel { Orientation = Orientation.Horizontal };
+            copyContent.Children.Add(U.Icon(U.GCopy, Math.Max(10, size * 0.7), null));
+            copyContent.Children.Add(copyLabel);
+            var copy = U.Btn("Btn.Ghost", copyContent, () => CopyCode(code, copyLabel), "Copy code");
+            copy.Padding = new Thickness(7, 3, 7, 3);
+
+            var header = new Grid { Margin = new Thickness(14, 4, 6, 4) };
+            header.ColumnDefinitions.Add(new ColumnDefinition());
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.Children.Add(label);
+            Grid.SetColumn(copy, 1);
+            header.Children.Add(copy);
+
+            var body = new StackPanel();
+            body.Children.Add(header);
+            body.Children.Add(new Border { Height = 1, Background = U.Border });
+            body.Children.Add(new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = tb
+            });
             return new Border
             {
                 Background = U.CodeBg,
                 BorderBrush = U.Border,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(14, 10, 14, 12),
                 Margin = new Thickness(0, size * 0.5, 0, size * 0.2),
-                Child = new ScrollViewer
-                {
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    Content = tb
-                }
+                Child = body
             };
+        }
+
+        private static void CopyCode(string code, TextBlock label)
+        {
+            try { Clipboard.SetText(code); }
+            catch { return; } // the clipboard is busy; the button just stays "Copy"
+            label.Text = "Copied";
+            var reset = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+            reset.Tick += delegate { reset.Stop(); label.Text = "Copy"; };
+            reset.Start();
         }
 
         /// <summary>Inline spans: **bold** (a keyword, in the keyword style), __bold__, *italic*, `code`.</summary>
@@ -174,14 +226,14 @@ namespace TheCloser.Ui
             {
                 if (buf.Length == 0) return;
                 var run = new Run(buf.ToString());
-                // "Off": keywords read as plain text.
-                if (bold && keywordStyle != KeywordStyles.Off)
+                // "Off" and "Plain text": keywords read as plain text. Plain text drops italics too.
+                if (bold && keywordStyle != KeywordStyles.Off && keywordStyle != KeywordStyles.Plain)
                 {
                     run.FontWeight = FontWeights.Bold;
                     if (keywordFg != null) run.Foreground = keywordFg;
                     if (keywordBg != null) run.Background = keywordBg;
                 }
-                if (italic) run.FontStyle = FontStyles.Italic;
+                if (italic && keywordStyle != KeywordStyles.Plain) run.FontStyle = FontStyles.Italic;
                 inlines.Add(run);
                 buf.Length = 0;
             };
