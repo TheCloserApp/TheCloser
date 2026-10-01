@@ -27,7 +27,7 @@ namespace TheCloser
     {
         public static readonly SpeechLanguage[] All =
         {
-            new SpeechLanguage("", "Detect automatically"),
+            new SpeechLanguage("", "All languages (auto-detect)"),
             new SpeechLanguage("en", "English", "Latin"),
             new SpeechLanguage("hi", "Hindi", "Devanagari", "Latin"),
             new SpeechLanguage("te", "Telugu", "Telugu", "Latin"),
@@ -78,6 +78,13 @@ namespace TheCloser
         {
             var l = Find(code);
             return l != null ? l.Name : code.Trim();
+        }
+
+        /// <summary>The picker pill's text: "All languages" is short for the auto-detect entry.</summary>
+        public static string ChipName(string code)
+        {
+            var l = Find(code);
+            return l != null && l.Code.Length == 0 ? "All languages" : Name(code);
         }
 
         public static bool XaiFormats(string code)
