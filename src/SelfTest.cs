@@ -136,6 +136,10 @@ namespace TheCloser
             Check("interview prompt keeps its own bold rule", !Prompts.SystemText(s, "interview").Contains(Prompts.KeywordRule), null);
             Check("a prompt without one gets the keyword rule", Prompts.SystemText(s, "meeting").EndsWith(Prompts.KeywordRule), null);
             Check("transcript rules come first", Prompts.SystemText(s, "call").StartsWith(Prompts.BaseRules), null);
+            s.KeywordStyle = KeywordStyles.Plain;
+            Check("plain text overrides the prompt's formatting", Prompts.SystemText(s, "interview").EndsWith(Prompts.PlainTextRule) &&
+                  !Prompts.SystemText(s, "meeting").Contains(Prompts.KeywordRule), null);
+            s.KeywordStyle = KeywordStyles.Standard;
 
             s.PromptId = "call";
             Prompts.Delete(s, "call");
@@ -176,6 +180,8 @@ namespace TheCloser
             Check("Windows engine picked", s.EffectiveTranscription == "LiveCaptions", null);
             s.Transcription = "Automatic";
             Check("automatic prefers ElevenLabs", s.EffectiveTranscription == "ElevenLabs", null);
+            s.ElevenLabsKey = "";
+            Check("an xAI key alone is enough", s.MissingKeys.Count == 0 && s.EffectiveTranscription == "Grok", s.MissingKeysText);
         }
 
         private static void TestPrompt()
@@ -236,13 +242,26 @@ namespace TheCloser
                 var plain = runs.First(r => r.Text.StartsWith("Use"));
                 var fg = KeywordStyles.Foreground(style);
                 var bg = KeywordStyles.Background(style);
-                bool ok = keyword.FontWeight == (style == KeywordStyles.Off ? System.Windows.FontWeights.Normal : System.Windows.FontWeights.Bold) &&
+                bool plainKeyword = style == KeywordStyles.Off || style == KeywordStyles.Plain;
+                bool ok = keyword.FontWeight == (plainKeyword ? System.Windows.FontWeights.Normal : System.Windows.FontWeights.Bold) &&
                           (fg == null ? keyword.ReadLocalValue(System.Windows.Documents.TextElement.ForegroundProperty) == System.Windows.DependencyProperty.UnsetValue : keyword.Foreground == fg) &&
                           (bg == null ? keyword.Background == null : keyword.Background == bg) &&
                           plain.Background == null && plain.ReadLocalValue(System.Windows.Documents.TextElement.ForegroundProperty) == System.Windows.DependencyProperty.UnsetValue;
                 Check("keywords in " + KeywordStyles.Name(style) + " style", ok, null);
             }
-            Check("nine styles (Off first), four highlights", KeywordStyles.Ids.Length == 9 && KeywordStyles.Ids[0] == KeywordStyles.Off && KeywordStyles.Ids.Count(KeywordStyles.IsHighlight) == 4, null);
+            Check("ten styles (Plain text, then Off), four highlights", KeywordStyles.Ids.Length == 10 && KeywordStyles.Ids[0] == KeywordStyles.Plain &&
+                  KeywordStyles.Ids[1] == KeywordStyles.Off && KeywordStyles.Ids.Count(KeywordStyles.IsHighlight) == 4, null);
+
+            // Plain text: no bold, italics, headings or list markers; code still a code block with its language.
+            var plainView = MarkdownView.Render("## Plan\nUse a **token bucket**, *quickly*.\n- one\n1. two\n```python\nprint(1)\n```", 14, KeywordStyles.Plain);
+            var text = MarkdownView.PlainText(plainView);
+            var plainRuns = new List<System.Windows.Documents.Run>();
+            foreach (var tb in plainView.Children.OfType<System.Windows.Controls.TextBlock>())
+                plainRuns.AddRange(tb.Inlines.OfType<System.Windows.Documents.Run>());
+            Check("plain text has no bold or italics", plainRuns.Count > 0 && plainRuns.All(r => r.FontWeight == System.Windows.FontWeights.Normal && r.FontStyle == System.Windows.FontStyles.Normal) &&
+                  plainView.Children.OfType<System.Windows.Controls.TextBlock>().All(t => t.FontWeight == System.Windows.FontWeights.Normal), text);
+            Check("plain text drops list markers", !text.Contains("\u2022") && text.Contains("one|") && text.Contains("1. two|"), text);
+            Check("code keeps its block and language", text.Contains("PYTHON|") && text.Contains("print(1)|"), text);
         }
 
         private static void TestCaptionDiff()

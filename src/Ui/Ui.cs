@@ -58,9 +58,11 @@ GContrast = "\uE793", GLayers = "\uE81E", GFont = "\uE8D2", GHighlight = "\uE7E6
             return b;
         }
 
+        /// <summary>A style from Theme.xaml; null without the app (self-tests build views with no Application).</summary>
         public static Style Style(string key)
         {
-            return (Style)Application.Current.FindResource(key);
+            var app = Application.Current;
+            return app == null ? null : (Style)app.FindResource(key);
         }
 
         public static TextBlock T(string text, double size, Brush fg, FontWeight weight)

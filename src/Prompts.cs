@@ -24,6 +24,11 @@ namespace TheCloser
 
         /// <summary>Added to a prompt that says nothing about bold: answers highlight the words the model bolds.</summary>
         public const string KeywordRule = "Bold the 2–3 key terms of each answer (**like this**) so they stand out at a glance.";
+        /// <summary>Plain text asks for no formatting at all, except code. Same wording as the Mac app.</summary>
+        public const string PlainTextRule =
+            "Write plain text only: no markdown, no bold or italics, no headings, no bullet or numbered lists. " +
+            "Use short plain sentences, one idea per line. Code still goes in a fenced code block with its language. " +
+            "This overrides any formatting instructions above.";
 
         public const string InterviewBody =
             "You are a real-time interview copilot. The user is IN a live job interview right now; " +
@@ -160,13 +165,15 @@ namespace TheCloser
         }
 
         /// <summary>
-        /// The full system prompt: how to read the transcript, the prompt, and - when the prompt says nothing about bold -
-        /// the rule that makes answers bold their key terms, which the answer view highlights.
+        /// The full system prompt: how to read the transcript, the prompt, and its formatting rule: plain text when that
+        /// keyword style is picked; otherwise, when the prompt says nothing about bold, the rule that makes answers bold
+        /// their key terms, which the answer view highlights.
         /// </summary>
         public static string SystemText(AppSettings s, string id)
         {
             var text = Instructions(s, id);
-            if (text.IndexOf("bold", StringComparison.OrdinalIgnoreCase) < 0) text += "\n\n" + KeywordRule;
+            if (s.KeywordStyle == Ui.KeywordStyles.Plain) text += "\n\n" + PlainTextRule;
+            else if (text.IndexOf("bold", StringComparison.OrdinalIgnoreCase) < 0) text += "\n\n" + KeywordRule;
             return BaseRules + "\n\n" + text;
         }
     }

@@ -262,19 +262,15 @@ namespace TheCloser.Ui
             // Pro includes the keys.
             if (!W.Billing.IsActive)
             {
-                bool grok = S.Transcription == "Grok";
                 p.Children.Add(H("API keys"));
-                p.Children.Add(Sub("OpenRouter runs the models; " + (grok ? "xAI" : "ElevenLabs") + " transcribes. Stored only on this PC."));
+                p.Children.Add(Sub("OpenRouter runs the models. ElevenLabs or xAI (Grok) transcribes: add the one you use. Stored only on this PC."));
                 var keys = new StackPanel();
                 keys.Children.Add(KeyLabel("OpenRouter", true));
                 keys.Children.Add(W.KeyField("sk-or-…", S.OpenRouterKey, v => S.OpenRouterKey = v));
                 keys.Children.Add(KeyLabel("ElevenLabs", false));
                 keys.Children.Add(W.KeyField("sk_…", S.ElevenLabsKey, v => S.ElevenLabsKey = v));
-                if (grok || !string.IsNullOrEmpty(S.XaiKey))
-                {
-                    keys.Children.Add(KeyLabel("xAI", false));
-                    keys.Children.Add(W.KeyField("xai-…", S.XaiKey, v => S.XaiKey = v));
-                }
+                keys.Children.Add(KeyLabel("xAI (Grok)", false));
+                keys.Children.Add(W.KeyField("xai-…", S.XaiKey, v => S.XaiKey = v));
                 p.Children.Add(Box(keys));
             }
             return p;

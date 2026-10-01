@@ -65,6 +65,22 @@ namespace TheCloser.Ui
             PageScene("settings-ai-full", 600, delegate(OverlayWindow w) { w.ShowSettings("ai"); });
             MenuScene("menu", delegate(OverlayWindow w) { w.LoadDemo(true); });
             CallPromptScene();
+            // Answers in Plain text and the default style, with a code block.
+            ElementScene("answer-styles", 520, delegate
+            {
+                var md = "## Approach\nI'd use a **token bucket** per API key, kept in *Redis* so every server shares it.\n" +
+                         "- Refill at the plan's rate; reject with **429** when empty.\n- Call `allow(key)` before each request.\n" +
+                         "```python\ndef allow(key, rate=10):\n    tokens = redis.decr(f\"bucket:{key}\")\n    return tokens >= 0\n```";
+                var stack = new StackPanel { Margin = new Thickness(20) };
+                foreach (var style in new[] { KeywordStyles.Plain, KeywordStyles.Standard })
+                {
+                    stack.Children.Add(U.T(KeywordStyles.Name(style), 12, U.Text3));
+                    var view = MarkdownView.Render(md, 15, style);
+                    view.Margin = new Thickness(0, 6, 0, 18);
+                    stack.Children.Add(view);
+                }
+                return stack;
+            });
 
             _log.AppendLine(_failures == 0 ? "ALL SCREENS RENDERED" : _failures + " SCREEN(S) FAILED");
             WriteLog();
@@ -169,6 +185,28 @@ namespace TheCloser.Ui
             {
                 if (menu != null) menu.IsOpen = false;
                 if (w != null) try { w.Close(); } catch { }
+            }
+        }
+
+        /// <summary>A piece of UI drawn on its own, on the card's background.</summary>
+        private static void ElementScene(string name, double width, Func<FrameworkElement> build)
+        {
+            try
+            {
+                var host = new Border { Background = new SolidColorBrush(Color.FromRgb(0x11, 0x11, 0x11)), Width = width, Child = build() };
+                host.Measure(new Size(width, double.PositiveInfinity));
+                host.Arrange(new Rect(host.DesiredSize));
+                host.UpdateLayout();
+                Pump(300);
+                host.UpdateLayout();
+                Save(host, host.DesiredSize.Width, host.DesiredSize.Height, name);
+                _log.AppendLine("OK    " + name);
+                WriteLog();
+            }
+            catch (Exception ex)
+            {
+                _failures++;
+                _log.AppendLine("FAIL  " + name + ": " + ex);
             }
         }
 

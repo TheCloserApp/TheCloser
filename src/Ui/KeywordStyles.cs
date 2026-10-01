@@ -4,14 +4,16 @@ using System.Windows.Media;
 namespace TheCloser.Ui
 {
     /// <summary>
-    /// How the keywords the model bolds in answers stand out: coloured text or a highlighter background, or "Off" for plain
-    /// text. Picked in Settings > General > Keywords or the ... menu; the same styles as the Mac app.
+    /// How the keywords the model bolds in answers stand out: coloured text or a highlighter background, or "Off" for no
+    /// highlight. "Plain text" asks for answers with no formatting at all (code still shows as code). Picked in Settings >
+    /// General > Keywords or the ... menu; the same styles as the Mac app.
     /// </summary>
     internal static class KeywordStyles
     {
         public const string Standard = "lightBlue";
         public const string Off = "off";
-        public static readonly string[] Ids = { "off", "bold", "blue", "lightBlue", "yellow", "blueHighlight", "yellowHighlight", "greenHighlight", "pinkHighlight" };
+        public const string Plain = "plain";
+        public static readonly string[] Ids = { "plain", "off", "bold", "blue", "lightBlue", "yellow", "blueHighlight", "yellowHighlight", "greenHighlight", "pinkHighlight" };
 
         /// <summary>Shown under the picker in Settings.</summary>
         public const string Sample = "Use **PostgreSQL** here, since payments need **strong consistency**.";
@@ -33,6 +35,7 @@ namespace TheCloser.Ui
         {
             switch (id)
             {
+                case "plain": return "Plain text";
                 case "off": return "Off";
                 case "bold": return "Bold only";
                 case "blue": return "Blue";
@@ -53,6 +56,7 @@ namespace TheCloser.Ui
                 case "blue": return Brand;
                 case "yellow": return Yellow;
                 case "yellowHighlight": return Ink;
+                case "plain":
                 case "off":
                 case "bold":
                 case "blueHighlight":
