@@ -253,13 +253,13 @@ namespace TheCloser
                   KeywordStyles.Ids[1] == KeywordStyles.Off && KeywordStyles.Ids.Count(KeywordStyles.IsHighlight) == 4, null);
 
             // Plain text: no bold, italics, headings or list markers; code still a code block with its language.
-            var plain = MarkdownView.Render("## Plan\nUse a **token bucket**, *quickly*.\n- one\n1. two\n```python\nprint(1)\n```", 14, KeywordStyles.Plain);
-            var text = MarkdownView.PlainText(plain);
-            var runs = new List<System.Windows.Documents.Run>();
-            foreach (var tb in plain.Children.OfType<System.Windows.Controls.TextBlock>())
-                runs.AddRange(tb.Inlines.OfType<System.Windows.Documents.Run>());
-            Check("plain text has no bold or italics", runs.Count > 0 && runs.All(r => r.FontWeight == System.Windows.FontWeights.Normal && r.FontStyle == System.Windows.FontStyles.Normal) &&
-                  plain.Children.OfType<System.Windows.Controls.TextBlock>().All(t => t.FontWeight == System.Windows.FontWeights.Normal), text);
+            var plainView = MarkdownView.Render("## Plan\nUse a **token bucket**, *quickly*.\n- one\n1. two\n```python\nprint(1)\n```", 14, KeywordStyles.Plain);
+            var text = MarkdownView.PlainText(plainView);
+            var plainRuns = new List<System.Windows.Documents.Run>();
+            foreach (var tb in plainView.Children.OfType<System.Windows.Controls.TextBlock>())
+                plainRuns.AddRange(tb.Inlines.OfType<System.Windows.Documents.Run>());
+            Check("plain text has no bold or italics", plainRuns.Count > 0 && plainRuns.All(r => r.FontWeight == System.Windows.FontWeights.Normal && r.FontStyle == System.Windows.FontStyles.Normal) &&
+                  plainView.Children.OfType<System.Windows.Controls.TextBlock>().All(t => t.FontWeight == System.Windows.FontWeights.Normal), text);
             Check("plain text drops list markers", !text.Contains("\u2022") && text.Contains("one|") && text.Contains("1. two|"), text);
             Check("code keeps its block and language", text.Contains("PYTHON|") && text.Contains("print(1)|"), text);
         }
